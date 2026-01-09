@@ -1,6 +1,6 @@
 import requests
 
-BASE_URL = "http://192.168.125.208:5000/auth/user"
+BASE_URL = "http://192.168.125.158:5000/auth/user"
 
 
 def test_login():

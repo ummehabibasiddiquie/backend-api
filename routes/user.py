@@ -1,69 +1,118 @@
 from flask import Blueprint, request
 from utils.response import api_response
 from config import get_db_connection
+from config import UPLOAD_SUBDIRS
+import os
+from utils.validators import validate_request
 
 user_bp = Blueprint("user", __name__)
 
 
 @user_bp.route("/list", methods=["POST"])
 def list_users():
-    """
-    List users with manager name, optional filters by role, designation, manager.
-    """
-    data = request.get_json() or {}
-    role_filter = data.get("role")
-    designation_filter = data.get("designation")
-    manager_filter = data.get("reporting_manager")  # can be manager's user_id or name
+    
+    data, err = validate_request(required=["user_id"])
+    if err:
+        return err
+        
+    user_id = data.get("user_id")
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-
+    
+    UPLOAD_URL_PREFIX = "/uploads" 
+    
     try:
-        # Base query with self-join to get manager name
+        # --------------------------------------------------
+        # 1. Get role of requesting user
+        # --------------------------------------------------
+        cursor.execute("""
+            SELECT r.role_name
+            FROM tfs_user u
+            JOIN user_role r ON r.role_id = u.role_id
+            WHERE u.user_id = %s AND u.is_active = 1 and is_delete = 1
+        """, (user_id,))
+        role_row = cursor.fetchone()
+
+        if not role_row:
+            return api_response(404, "User not found")
+
+        role = role_row["role_name"].lower()
+
+        # --------------------------------------------------
+        # 2. Agent → no users
+        # --------------------------------------------------
+        if role == "agent":
+            return api_response(200, "No users available", [])
+
+        # --------------------------------------------------
+        # 3. Base query
+        # --------------------------------------------------
         query = """
-            SELECT 
+            SELECT
                 u.user_id,
                 u.user_name,
                 u.user_email,
-                u.user_role,
-                u.user_designation,
-                m.user_name AS reporting_manager_name
+                u.user_number,
+                u.user_address,
+                u.user_password,
+                u.user_tenure,
+                u.profile_picture,
+
+                r.role_name AS role,
+                t.team_name,
+                d.designation_id,
+                d.designation,
+
+                pm.user_name AS project_manager,
+                am.user_name AS asst_manager,
+                qa.user_name AS qa
+
             FROM tfs_user u
-            LEFT JOIN tfs_user m ON u.reporting_manager = m.user_id
-            WHERE 1=1
+            LEFT JOIN user_role r ON r.role_id = u.role_id
+            LEFT JOIN user_designation d ON d.designation_id = u.designation_id
+            left join team t on u.team_id = t.team_id
+
+            LEFT JOIN tfs_user pm ON pm.user_id = u.project_manager_id
+            LEFT JOIN tfs_user am ON am.user_id = u.asst_manager_id
+            LEFT JOIN tfs_user qa ON qa.user_id = u.qa_id
+
+            WHERE u.is_active = 1 and u.is_delete = 1
         """
+
         params = []
 
-        # Optional filters
-        if role_filter:
-            query += " AND u.user_role = %s"
-            params.append(role_filter)
+        # --------------------------------------------------
+        # 4. Role-based filtering
+        # --------------------------------------------------
+        if role == "qa":
+            query += " AND u.qa_id = %s"
+            params.append(user_id)
 
-        if designation_filter:
-            query += " AND u.user_designation = %s"
-            params.append(designation_filter)
+        elif role == "assistant manager":
+            query += " AND u.assistant_manager_id = %s"
+            params.append(user_id)
 
-        if manager_filter:
-            query += " AND m.user_name = %s"
-            params.append(manager_filter)
+        elif role == "manager":
+            query += " AND u.project_manager_id = %s"
+            params.append(user_id)
+
+        # admin / super admin → no extra filter
 
         query += " ORDER BY u.user_id DESC"
+        # print(query)
 
-        cursor.execute(query, tuple(params))
-        results = cursor.fetchall()
+        cursor.execute(query, params)
+        users = cursor.fetchall()
+        
+        for u in users:
+            filename = u.get("profile_picture")  # DB column
+            if filename:
+                u["profile_picture"] = f"{UPLOAD_URL_PREFIX}/{UPLOAD_SUBDIRS['PROFILE_PIC']}/{filename}"
+            else:
+                u["profile_picture"] = None
 
-        users_list = []
-        for row in results:
-            users_list.append({
-                "user_id": row["user_id"],
-                "user_name": row["user_name"],
-                "user_email": row["user_email"],
-                "user_role": row["user_role"],
-                "designation": row.get("user_designation"),
-                "reporting_to": row.get("reporting_manager_name")  # display name
-            })
-
-        return api_response(200, "Users fetched successfully", users_list)
+        return api_response(200, "Users fetched successfully", users)
 
     except Exception as e:
         return api_response(500, f"Failed to fetch users: {str(e)}")
@@ -71,7 +120,7 @@ def list_users():
     finally:
         cursor.close()
         conn.close()
-        
+
         
 @user_bp.route("/update_user", methods=["PUT"])
 def update_user():
@@ -122,7 +171,7 @@ def update_user():
             cursor.execute(update_user_query, user_update_vals)
 
         # -------------------------------------------------------
-        # 2. Dynamic UPDATE for user_role
+        # 2. Dnamic UPDATE for user_role
         # -------------------------------------------------------
         role_fields = {
             "role_name": data.get("role_name"),
@@ -176,17 +225,17 @@ def delete_user():
     try:
         query = """
             UPDATE tfs_user
-            SET is_active = 0
+            SET is_delete = 0, is_active = 0
             WHERE user_id = %s
         """
         cursor.execute(query, (user_id,))
         conn.commit()
 
-        return api_response(200, "User deactivated successfully")
+        return api_response(200, "User Deleted successfully")
 
     except Exception as e:
         conn.rollback()
-        return api_response(500, f"Failed to deactivate user: {str(e)}")
+        return api_response(500, f"Failed to Delete user: {str(e)}")
 
     finally:
         cursor.close()
