@@ -1,11 +1,13 @@
 from flask import Blueprint, request
-from config import get_db_connection, UPLOAD_FOLDER, UPLOAD_SUBDIRS
+from config import get_db_connection,UPLOAD_FOLDER, UPLOAD_SUBDIRS, BASE_DIR
 from utils.response import api_response
-from utils.task_file_utils import save_base64_tracker_file
+from utils.file_utils import save_base64_file
 from datetime import datetime
 import os
 
 tracker_bp = Blueprint("tracker", __name__)
+
+UPLOAD_URL_PREFIX = "/uploads"
 
 # Helper function for target calculation
 def calculate_targets(base_target, user_tenure):
@@ -33,12 +35,13 @@ def add_tracker():
     user_id = data["user_id"]
     production = float(data["production"])
     tenure_target = float(data["tenure_target"])
-    task_file_base64 = data.get("task_file")
-    task_file = None
+    tracker_file_base64 = data.get("tracker_file")
+    tracker_file = None
     is_active = 1
+    billable_hours = production / tenure_target
 
-    if task_file_base64:
-        task_file = save_base64_tracker_file(task_file_base64)
+    if tracker_file_base64:
+        tracker_file = save_base64_file(tracker_file_base64, UPLOAD_SUBDIRS['TRACKER_FILES'])
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -55,9 +58,9 @@ def add_tracker():
 
         cursor.execute("""
             INSERT INTO task_work_tracker
-            (project_id, task_id, user_id, production, actual_target, tenure_target, task_file, task_file_base64, is_active, date_time)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """, (project_id, task_id, user_id, production, actual_target, tenure_target, task_file, task_file_base64, is_active, now))
+            (project_id, task_id, user_id, production, actual_target, tenure_target, billable_hours, tracker_file, tracker_file_base64, is_active, date_time)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (project_id, task_id, user_id, production, actual_target, tenure_target, billable_hours, tracker_file, tracker_file_base64, is_active, now))
 
         conn.commit()
         tracker_id = cursor.lastrowid
@@ -100,19 +103,19 @@ def update_tracker():
         production = float(data.get("production", tracker["production"]))
         base_target = float(data.get("base_target", tracker["actual_target"]))
 
-        task_file_base64 = data.get("task_file_base64")
-        task_file = tracker["task_file"]
-        if task_file_base64:
-            task_file = save_base64_tracker_file(task_file_base64)
+        tracker_file_base64 = data.get("tracker_file_base64")
+        tracker_file = tracker["tracker_file"]
+        if tracker_file_base64:
+            tracker_file = save_base64_tracker_file(tracker_file_base64)
 
         actual_target, tenure_target = calculate_targets(base_target, user["user_tenure"])
         updated_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         cursor.execute("""
             UPDATE task_work_tracker
-            SET user_id=%s, production=%s, actual_target=%s, tenure_target=%s, task_file=%s, task_file_base64=%s, updated_date=%s
+            SET user_id=%s, production=%s, actual_target=%s, tenure_target=%s, tracker_file=%s, tracker_file_base64=%s, updated_date=%s
             WHERE tracker_id=%s
-        """, (new_user_id, production, actual_target, tenure_target, task_file, task_file_base64, updated_date, tracker_id))
+        """, (new_user_id, production, actual_target, tenure_target, tracker_file, tracker_file_base64, updated_date, tracker_id))
 
         conn.commit()
         return api_response(200, "Tracker updated successfully")
@@ -130,21 +133,16 @@ def update_tracker():
 # ------------------------
 @tracker_bp.route("/view", methods=["POST"])
 def view_trackers():
-    """
-    Fully dynamic tracker view.
-    Backend applies ONLY the filters provided in request.
-    Any combination of filters is supported.
-    """
     data = request.get_json() or {}
+    # print(data)
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
     try:
-        query = "SELECT * FROM task_work_tracker WHERE is_active != 0"
+        query = "SELECT *, production / tenure_target as billable_hours FROM task_work_tracker WHERE is_active != 0"
         params = []
 
-        # 🔹 Dynamic filters
         if data.get("user_id"):
             query += " AND user_id=%s"
             params.append(data["user_id"])
@@ -165,23 +163,28 @@ def view_trackers():
             query += " AND date_time <= %s"
             params.append(data["date_to"])
 
-        # Optional active filter (recommended)
         if data.get("is_active") is not None:
             query += " AND is_active=%s"
             params.append(data["is_active"])
 
         query += " ORDER BY date_time DESC"
-
+        # print(query)
         cursor.execute(query, tuple(params))
         trackers = cursor.fetchall()
+
+        tracker_files_url = f"{UPLOAD_FOLDER}/{UPLOAD_SUBDIRS['TRACKER_FILES']}/"
+        tracker_file_temp = ""
+        for t in trackers:
+            tracker_file_temp = t.get("tracker_file")
+            if t.get("tracker_file"):
+                t["tracker_file"] = tracker_files_url + tracker_file_temp
+            else:
+                t["tracker_file"] = None
 
         return api_response(
             200,
             "Trackers fetched successfully",
-            {
-                "count": len(trackers),
-                "trackers": trackers
-            }
+            {"count": len(trackers), "trackers": trackers}
         )
 
     except Exception as e:

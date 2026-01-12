@@ -1,10 +1,11 @@
 from flask import Blueprint, request
 from utils.response import api_response
-from config import get_db_connection, UPLOAD_FOLDER, UPLOAD_SUBDIRS
-from utils.file_utils import save_base64_project_file
+from config import get_db_connection, UPLOAD_SUBDIRS
+from utils.file_utils import save_base64_file
 import json
 import os
 from datetime import datetime
+
 
 project_bp = Blueprint("project", __name__)
 
@@ -41,7 +42,7 @@ def create_project():
     if data.get("files"):
         try:
             project_pprt_base64 = data["files"]
-            project_pprt = save_base64_project_file(data["files"])
+            project_pprt = save_base64_file(data["files"],UPLOAD_SUBDIRS["PROJECT_PPRT"])
         except Exception as e:
             return api_response(400, f"File handling failed: {str(e)}")
 
@@ -115,7 +116,7 @@ def update_project():
     # File replacement
     if data.get("files"):
         try:
-            file_name = save_base64_project_file(data["files"])
+            file_name = save_base64_file(data["files"],UPLOAD_SUBDIRS["PROJECT_PPRT"])
             update_values["project_pprt"] = file_name
             update_values["project_pprt_base64"] = data["files"]
         except Exception as e:

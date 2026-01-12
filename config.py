@@ -13,7 +13,8 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, UPLOAD_DIR)
 UPLOAD_SUBDIRS = {
     "PROFILE_PIC": "profile_pictures",
     "PROJECT_PPRT": "project_pprt",
-    "TASK_FILES": "task_files"
+    "TASK_FILES": "task_files",
+    "TRACKER_FILES": "tracker_files"
 }
 
 def get_db_connection():

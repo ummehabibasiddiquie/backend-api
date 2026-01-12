@@ -4,6 +4,7 @@ from config import get_db_connection
 from config import UPLOAD_SUBDIRS
 import os
 from utils.validators import validate_request
+from utils.json_utils import to_db_json
 
 user_bp = Blueprint("user", __name__)
 
@@ -58,6 +59,7 @@ def list_users():
                 u.user_password,
                 u.user_tenure,
                 u.profile_picture,
+                u.is_active,
 
                 r.role_name AS role,
                 t.team_name,
@@ -77,7 +79,7 @@ def list_users():
             LEFT JOIN tfs_user am ON am.user_id = u.asst_manager_id
             LEFT JOIN tfs_user qa ON qa.user_id = u.qa_id
 
-            WHERE u.is_active = 1 and u.is_delete = 1
+            WHERE u.is_delete = 1
         """
 
         params = []
@@ -149,7 +151,16 @@ def update_user():
             "designation": data.get("designation"),
             "reporting_manager": data.get("reporting_manager"),
             "device_type": data.get("device_type"),
-            "device_id": data.get("device_id")
+            "device_id": data.get("device_id"),
+            "team_id": data.get("team_id"),
+            "is_active": data.get("is_active"),
+            
+            # ✅ JSON columns (store as JSON)
+            "project_manager_id": to_db_json(data.get("project_manager_id"), allow_single=True),
+            "asst_manager_id": to_db_json(data.get("asst_manager_id"), allow_single=True),
+            "qa_id": to_db_json(data.get("qa_id"), allow_single=True),
+            "team_id": to_db_json(data.get("team_id"), allow_single=True),
+            
         }
 
         user_update_cols = []
@@ -166,6 +177,7 @@ def update_user():
                 SET {', '.join(user_update_cols)}
                 WHERE user_id = %s
             """
+            print(update_user_query)
             user_update_vals.append(user_id)
             print(update_user_query, user_update_vals)
             cursor.execute(update_user_query, user_update_vals)
