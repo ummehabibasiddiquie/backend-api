@@ -14,7 +14,7 @@ import os
 
 app = Flask(__name__)
 
-BASE_URL = os.getenv("BASE_URL", "/")
+BASE_URL = os.getenv("BASE_URL", "/python")
 
 app.register_blueprint(auth_bp, url_prefix=f"{BASE_URL}/auth")
 app.register_blueprint(user_bp, url_prefix=f"{BASE_URL}/user")
