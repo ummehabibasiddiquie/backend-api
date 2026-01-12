@@ -1,5 +1,7 @@
 import mysql.connector
 import os, uuid
+from dotenv import load_dotenv
+load_dotenv()
 
 
 # Project base directory
@@ -19,8 +21,9 @@ UPLOAD_SUBDIRS = {
 
 def get_db_connection():
     return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="",   # default XAMPP password is empty
-        database="tfs_hrms"
+        host=os.getenv('DB_HOST', 'localhost'),  # Use env var or default to 'localhost'
+        port=int(os.getenv('DB_PORT', 3306)),    # Use env var or default to 3306
+        user=os.getenv('DB_USERNAME', 'root'),   # Use env var or default to 'root'
+        password=os.getenv('DB_PASSWORD', ''),   # Use env var or default to empty string
+        database=os.getenv('DB_DATABASE', 'tfs_hrms')  # Use env var or default to 'tfs_hrms'
     )
