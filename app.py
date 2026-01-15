@@ -16,18 +16,19 @@ import os
 
 app = Flask(__name__)
 
-BASE_URL = os.getenv("BASE_URL", "/python")
+BASE_URL =  ""
+# os.getenv("BASE_URL", "/python")
 
-app.register_blueprint(auth_bp, url_prefix=f"{BASE_URL}/auth")
-app.register_blueprint(user_bp, url_prefix=f"{BASE_URL}/user")
-app.register_blueprint(project_bp, url_prefix=f"{BASE_URL}/project")
-app.register_blueprint(dropdown_bp, url_prefix=f"{BASE_URL}/dropdown")
-app.register_blueprint(task_bp, url_prefix=f"{BASE_URL}/task")
-app.register_blueprint(tracker_bp, url_prefix=f"{BASE_URL}/tracker")
-app.register_blueprint(permission_bp, url_prefix=f"{BASE_URL}/permission")
-app.register_blueprint(dashboard_bp,url_prefix=f"{BASE_URL}/dashboard")
-app.register_blueprint(project_monthly_tracker_bp,url_prefix=f"{BASE_URL}/project_monthly_tracker")
-app.register_blueprint(user_monthly_tracker_bp,url_prefix=f"{BASE_URL}/user_monthly_tracker")
+app.register_blueprint(auth_bp, url_prefix=f"/auth")
+app.register_blueprint(user_bp, url_prefix=f"/user")
+app.register_blueprint(project_bp, url_prefix=f"/project")
+app.register_blueprint(dropdown_bp, url_prefix=f"/dropdown")
+app.register_blueprint(task_bp, url_prefix=f"/task")
+app.register_blueprint(tracker_bp, url_prefix=f"/tracker")
+app.register_blueprint(permission_bp, url_prefix=f"/permission")
+app.register_blueprint(dashboard_bp,url_prefix=f"/dashboard")
+app.register_blueprint(project_monthly_tracker_bp,url_prefix=f"/project_monthly_tracker")
+app.register_blueprint(user_monthly_tracker_bp,url_prefix=f"/user_monthly_tracker")
 
 # CORS(app, supports_credentials=True)
 CORS(app, resources={r"/*": {"origins": "*"}})
