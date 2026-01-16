@@ -59,7 +59,7 @@ def add_tracker():
         cursor.execute("""
             INSERT INTO task_work_tracker
             (project_id, task_id, user_id, production, actual_target, tenure_target, billable_hours, tracker_file, tracker_file_base64, is_active, date_time, updated_date)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (project_id, task_id, user_id, production, actual_target, tenure_target, billable_hours, tracker_file, tracker_file_base64, is_active, now, now))
 
         conn.commit()
