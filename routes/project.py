@@ -61,7 +61,7 @@ def create_project():
     data = request.get_json(silent=True) or {}
     if not data:
         return api_response(400, "Request body is required")
-    if data["project_description"] is "null" :
+    if data["project_description"] === "null" :
         data["project_description"] = None
 
     required_fields = ["project_name", "project_code", "project_manager_id"]

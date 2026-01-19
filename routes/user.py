@@ -128,7 +128,7 @@ def list_users():
 @user_bp.route("/update_user", methods=["PUT"])
 def update_user():
     data = request.get_json()
-    print(data)
+    # print(data)
 
     if not data:
         return api_response(400, "Invalid JSON or no body received")
@@ -181,7 +181,7 @@ def update_user():
             """
             # print(update_user_query)
             user_update_vals.append(user_id)
-            print(update_user_query, user_update_vals)
+            # print(update_user_query, user_update_vals)
             cursor.execute(update_user_query, user_update_vals)
 
         # -------------------------------------------------------
