@@ -143,9 +143,13 @@ def view_trackers():
             SELECT 
                 twt.*,
                 u.user_name,
+                p.project_name,
+                tk.task_name,
                 (twt.production / twt.tenure_target) AS billable_hours
             FROM task_work_tracker twt
             LEFT JOIN tfs_user u ON u.user_id = twt.user_id
+            LEFT JOIN project p ON p.project_id = twt.project_id
+            LEFT JOIN task tk ON tk.task_id = twt.task_id
             WHERE twt.is_active != 0
         """
 
@@ -165,7 +169,6 @@ def view_trackers():
                 pass  # admin sees all
 
             elif logged_in_user_id:
-                # Ensure it's string because your manager columns are TEXT
                 manager_id_str = str(logged_in_user_id)
 
                 query += """
@@ -185,7 +188,10 @@ def view_trackers():
                           )
                     )
                 """
-                params.extend([manager_id_str, manager_id_str, manager_id_str, manager_id_str, manager_id_str, manager_id_str, manager_id_str])
+                params.extend([
+                    manager_id_str, manager_id_str, manager_id_str, manager_id_str,
+                    manager_id_str, manager_id_str, manager_id_str
+                ])
 
         # existing filters (same logic, prefixed with twt.)
         if data.get("project_id"):
@@ -233,6 +239,7 @@ def view_trackers():
     finally:
         cursor.close()
         conn.close()
+
 
 # ------------------------
 # DELETE TRACKER (SOFT DELETE)
