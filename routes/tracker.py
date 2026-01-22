@@ -4,6 +4,7 @@ from utils.response import api_response
 from utils.file_utils import save_base64_file
 from datetime import datetime
 import os
+# from flask_cors import cross_origin
 
 tracker_bp = Blueprint("tracker", __name__)
 
@@ -17,7 +18,7 @@ def calculate_targets(base_target, user_tenure):
     tenure_target = round(base_target * user_tenure, 2)
     return actual_target, tenure_target
 
-
+# @cross_origin()
 # ------------------------
 # ADD TRACKER
 # ------------------------
@@ -131,15 +132,6 @@ def update_tracker():
 # ------------------------
 # VIEW TRACKERS
 # ------------------------
-# routes/tracker.py  (or wherever your tracker_bp lives)
-
-from flask import Blueprint, request
-from config import get_db_connection, UPLOAD_FOLDER, UPLOAD_SUBDIRS
-from utils.response import api_response
-
-tracker_bp = Blueprint("tracker", __name__, url_prefix="/tracker")
-
-# If your project already defines this elsewhere, reuse it.
 # task_work_tracker.date_time is TEXT like "YYYY-MM-DD HH:MM:SS"
 TRACKER_DT = "CAST(twt.date_time AS DATETIME)"
 TRACKER_YEAR_MONTH = f"(YEAR({TRACKER_DT})*100 + MONTH({TRACKER_DT}))"
@@ -260,12 +252,18 @@ def view_trackers():
             params.append(data["task_id"])
 
         if data.get("date_from"):
+            date_from = data["date_from"]
+            if len(date_from) == 10:  # Format 'YYYY-MM-DD'
+                date_from += " 00:00:00"
             query += " AND twt.date_time >= %s"
-            params.append(data["date_from"])
+            params.append(date_from)
 
         if data.get("date_to"):
+            date_to = data["date_to"]
+            if len(date_to) == 10:  # Format 'YYYY-MM-DD'
+                date_to += " 23:59:59"
             query += " AND twt.date_time <= %s"
-            params.append(data["date_to"])
+            params.append(date_to)
 
         if data.get("is_active") is not None:
             query += " AND twt.is_active=%s"

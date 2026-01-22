@@ -128,14 +128,21 @@ def apply_tracker_filters(data: dict, where_sql: str, params: list) -> tuple[str
         where_sql += f" AND DATE({TRACKER_DT}) = %s"
         params.append(data["date"])
 
+
     # Range (YYYY-MM-DD HH:MM:SS)
     if data.get("date_from"):
+        date_from = data["date_from"]
+        if len(date_from) == 10:  # Format 'YYYY-MM-DD'
+            date_from += " 00:00:00"
         where_sql += f" AND {TRACKER_DT} >= %s"
-        params.append(data["date_from"])
+        params.append(date_from)
 
     if data.get("date_to"):
+        date_to = data["date_to"]
+        if len(date_to) == 10:  # Format 'YYYY-MM-DD'
+            date_to += " 23:59:59"
         where_sql += f" AND {TRACKER_DT} <= %s"
-        params.append(data["date_to"])
+        params.append(date_to)
 
     return where_sql, params
 
