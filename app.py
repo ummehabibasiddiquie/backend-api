@@ -9,6 +9,7 @@ from routes.user_permission import permission_bp
 from routes.dashboard import dashboard_bp
 from routes.project_monthly_tracker import project_monthly_tracker_bp
 from routes.user_monthly_tracker import user_monthly_tracker_bp
+from routes.api_log_list import api_log_list_bp
 
 from flask_cors import CORS
 import os
@@ -29,9 +30,11 @@ app.register_blueprint(permission_bp, url_prefix=f"/permission")
 app.register_blueprint(dashboard_bp,url_prefix=f"/dashboard")
 app.register_blueprint(project_monthly_tracker_bp,url_prefix=f"/project_monthly_tracker")
 app.register_blueprint(user_monthly_tracker_bp,url_prefix=f"/user_monthly_tracker")
+app.register_blueprint(api_log_list_bp, url_prefix="/api_log_list")
 
 # CORS(app, supports_credentials=True)
 CORS(app, resources={r"/*": {"origins": "*"}})
+
 
 @app.route("/")
 def home():
