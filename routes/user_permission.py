@@ -8,10 +8,11 @@ permission_bp = Blueprint("permission", __name__, url_prefix="/permission")
 @permission_bp.route("/user_list", methods=["POST"])
 def user_list_with_permissions():
     data = request.get_json() or {}
-    user_id = data.get("user_id")
+    logged_in_user_id = data.get("logged_in_user_id")
+    filter_role = data.get("role")  # Optional role filter
 
-    if not user_id:
-        return api_response(400, "user_id is required")
+    if not logged_in_user_id:
+        return api_response(400, "logged_in_user_id is required")
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -23,7 +24,7 @@ def user_list_with_permissions():
             FROM tfs_user u
             JOIN user_role r ON r.role_id = u.role_id
             WHERE u.user_id = %s AND u.is_active = 1 AND u.is_delete = 1
-        """, (user_id,))
+        """, (logged_in_user_id,))
         role_row = cursor.fetchone()
 
         if not role_row:
@@ -58,44 +59,39 @@ def user_list_with_permissions():
 
             WHERE u.is_active = 1 AND u.is_delete = 1
         """
-        
         params = []
-        
-        # 4) Role-based filtering
-        if role == "assistant manager":
-            query += " AND u.asst_manager_id = %s"
-            params.append(user_id)
 
-        elif role == "manager":
-            query += " AND u.project_manager_id = %s"
-            params.append(user_id)
-
-        elif role == "qa":
-            # (you already block qa, but if later you allow it, this is how you'd filter)
+        # 4) Role-based filtering (align with user.py)
+        if role == "qa":
             query += " AND u.qa_id = %s"
-            params.append(user_id)
-
-        # admin / super admin -> no filter (full list)
-
-        # 4) Same role-based filtering logic as your /list
-        if role == "assistant manager":
-            # NOTE: in your list API you used assistant_manager_id in filter,
-            # but in SELECT you wrote asst_manager_id. Use the correct column name here.
+            params.append(logged_in_user_id)
+        elif role == "assistant manager":
             query += " AND u.asst_manager_id = %s"
-            params.append(user_id)
-
-        elif role == "manager":
+            params.append(logged_in_user_id)
+        elif role == "manager" or role == "project manager":
             query += " AND u.project_manager_id = %s"
-            params.append(user_id)
+            params.append(logged_in_user_id)
+        # admin / super admin -> no extra filter
 
-        # admin / super admin -> no filter
+        # 5) Additional filter: if filter_role is provided, filter by that role
+        if filter_role:
+            query += " AND LOWER(r.role_name) = %s"
+            params.append(filter_role.strip().lower())
 
         query += " ORDER BY u.user_id DESC"
 
         cursor.execute(query, params)
         users = cursor.fetchall()
 
-        return api_response(200, "Users with permissions fetched successfully", users)
+        # Debug info for troubleshooting
+        debug_info = {
+            "detected_role": role,
+            "sql": query,
+            "params": params
+        }
+
+        # return api_response(200, "Users with permissions fetched successfully", {"users": users, "debug": debug_info})
+        return api_response(200, "Users with permissions fetched successfully", {"users": users})
 
     except Exception as e:
         return api_response(500, f"Failed to fetch user permissions list: {str(e)}")

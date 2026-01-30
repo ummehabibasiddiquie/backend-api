@@ -1,5 +1,5 @@
 from flask import Blueprint, request
-from config import get_db_connection
+from config import get_db_connection, BASE_UPLOAD_URL, UPLOAD_SUBDIRS
 from utils.response import api_response
 from datetime import datetime
 from utils.validators import (
@@ -11,7 +11,7 @@ from utils.validators import (
 from utils.security import hash_password
 from utils.security import verify_password
 from utils.image_utils import save_base64_image_as_webp
-from config import UPLOAD_SUBDIRS
+# from app import BASE_URL
 from utils.validators import validate_request
 
 auth_bp = Blueprint("auth", __name__)
@@ -72,7 +72,8 @@ def user_handler():
             
             if user["profile_picture"] :
                 filename = user.get("profile_picture")
-                user["profile_picture"] =  f"{UPLOAD_URL_PREFIX}/{UPLOAD_SUBDIRS['PROFILE_PIC']}/{filename}"
+                # user["profile_picture"] =  f"{UPLOAD_URL_PREFIX}/{UPLOAD_SUBDIRS['PROFILE_PIC']}/{filename}"
+                user["profile_picture"] =  f"{BASE_UPLOAD_URL}/{UPLOAD_SUBDIRS['PROFILE_PIC']}/{filename}"
 
             # Remove password before sending
             user.pop("user_password", None)
@@ -134,7 +135,7 @@ def user_handler():
         
     
     profile_picture_base64 = data.get("profile_picture")
-    profile_picture = None
+    # profile_picture = data.get("profile_picture")
 
     if profile_picture_base64 :
         profile_picture = save_base64_image_as_webp(profile_picture_base64,user_name)
@@ -250,3 +251,40 @@ def user_handler():
     finally:
         cursor.close()
         conn.close()
+
+# @auth_bp.route('/forgot-password', methods=['POST'])
+# def forgot_password():
+    # data = request.get_json()
+    # user_email = (data.get('user_email') or '').strip().lower()
+    # if not is_valid_email(user_email):
+    #     return api_response(400, 'Invalid email format')
+
+    # conn = get_db_connection()
+    # cursor = conn.cursor(dictionary=True)
+    # cursor.execute('SELECT user_id FROM tfs_user WHERE user_email=%s AND is_active=1 AND is_delete=1', (user_email,))
+    # user = cursor.fetchone()
+    # if not user:
+    #     return api_response(404, 'No active user found with this email')
+
+    # # Generate token
+    # s = URLSafeTimedSerializer('your-secret-key')
+    # token = s.dumps(user_email, salt='password-reset-salt')
+    # reset_link = f"{}/reset-password?token={token}"
+
+    # # Send email (simple example, replace with your SMTP config)
+    # msg = MIMEMultipart()
+    # msg['From'] = 'noreply@yourdomain.com'
+    # msg['To'] = user_email
+    # msg['Subject'] = 'Password Reset Request'
+    # body = f"Click the link to reset your password: <a href='{reset_link}'>{reset_link}</a>\nThis link is valid for 1 hour."
+    # msg.attach(MIMEText(body, 'html'))
+    # try:
+    #     smtp = smtplib.SMTP('localhost')  # Or your SMTP server
+    #     smtp.sendmail(msg['From'], [msg['To']], msg.as_string())
+    #     smtp.quit()
+    # except Exception as e:
+    #     return api_response(500, f'Failed to send email: {str(e)}')
+    # finally:
+    #     cursor.close()
+    #     conn.close()
+    # return api_response(200, 'Password reset link sent to your email')

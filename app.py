@@ -40,6 +40,12 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 def home():
     return "Flask Auth API is running!"
 
+@app.route("/uploads/<path:filename>")
+def serve_uploads(filename):
+    from config import UPLOAD_FOLDER
+    from flask import send_from_directory
+    return send_from_directory(UPLOAD_FOLDER, filename)
+
 if __name__ == "__main__":
     # app.run(debug=True)
     app.run(host="0.0.0.0", port=5000, debug=True)

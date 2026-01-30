@@ -1,7 +1,7 @@
 from flask import Blueprint, request
 from utils.response import api_response
 from config import get_db_connection
-from config import UPLOAD_SUBDIRS
+from config import UPLOAD_SUBDIRS, BASE_UPLOAD_URL
 import os
 from utils.validators import validate_request
 from utils.json_utils import to_db_json
@@ -111,7 +111,8 @@ def list_users():
         for u in users:
             filename = u.get("profile_picture")  # DB column
             if filename:
-                u["profile_picture"] = f"{UPLOAD_URL_PREFIX}/{UPLOAD_SUBDIRS['PROFILE_PIC']}/{filename}"
+                # u["profile_picture"] = f"{UPLOAD_URL_PREFIX}/{UPLOAD_SUBDIRS['PROFILE_PIC']}/{filename}"
+                u["profile_picture"] = f"{BASE_UPLOAD_URL}/{UPLOAD_SUBDIRS['PROFILE_PIC']}/{filename}"
             else:
                 u["profile_picture"] = None
 

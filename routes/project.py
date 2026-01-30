@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request
 from utils.response import api_response
-from config import get_db_connection, UPLOAD_SUBDIRS, UPLOAD_FOLDER
+from config import get_db_connection, UPLOAD_SUBDIRS, BASE_UPLOAD_URL
 from utils.file_utils import save_base64_file
 import json
 import os
@@ -274,33 +274,66 @@ def delete_project():
 # ---------------- LIST PROJECTS ---------------- #
 @project_bp.route("/list", methods=["POST"])
 def list_projects():
+    data = request.get_json(silent=True) or {}
+    logged_in_user_id = data.get("logged_in_user_id")
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
     try:
-        cursor.execute(
-            """
+        # Get user role
+        role_name = None
+        if logged_in_user_id:
+            cursor.execute("""
+                SELECT r.role_name FROM tfs_user u
+                JOIN user_role r ON r.role_id = u.role_id
+                WHERE u.user_id=%s AND u.is_active=1 AND u.is_delete=1
+            """, (logged_in_user_id,))
+            row = cursor.fetchone()
+            if row:
+                role_name = (row["role_name"] or "").strip().lower()
+
+        # Always fetch all active projects, filter in Python for non-admin roles
+        cursor.execute("""
             SELECT project_id, project_name, project_code, project_description, project_team_id,
                    project_manager_id, asst_project_manager_id, project_qa_id,
                    project_pprt, created_date, updated_date
             FROM project
             WHERE is_active=1
             ORDER BY project_id DESC
-            """
-        )
+        """)
         projects = cursor.fetchall()
         result = []
 
         for proj in projects:
-            project_team = get_users_by_ids(conn, json.loads(proj["project_team_id"] or "[]"))
-            asst_managers = get_users_by_ids(conn, json.loads(proj["asst_project_manager_id"] or "[]"))
-            qas = get_users_by_ids(conn, json.loads(proj["project_qa_id"] or "[]"))
+            # Role-based filtering in Python
+            include = True
+            if role_name not in ["admin", "super admin"] and logged_in_user_id:
+                uid = str(logged_in_user_id)
+                include = False
+                # Project manager (single value)
+                if str(proj.get("project_manager_id")) == uid:
+                    include = True
+                # Assistant managers (JSON array)
+                elif uid in [str(x) for x in (json.loads(proj.get("asst_project_manager_id") or "[]"))]:
+                    include = True
+                # QA (JSON array)
+                elif uid in [str(x) for x in (json.loads(proj.get("project_qa_id") or "[]"))]:
+                    include = True
+                # Project team (JSON array)
+                elif uid in [str(x) for x in (json.loads(proj.get("project_team_id") or "[]"))]:
+                    include = True
+            if not include:
+                continue
+
+            # Only return user IDs for these fields
+            project_team_ids = [int(x) for x in (json.loads(proj["project_team_id"] or "[]"))]
+            asst_manager_ids = [int(x) for x in (json.loads(proj["asst_project_manager_id"] or "[]"))]
+            qa_ids = [int(x) for x in (json.loads(proj["project_qa_id"] or "[]"))]
 
             project_file_url = None
             if proj.get("project_pprt"):
-                project_file_url = f"{UPLOAD_FOLDER}/{UPLOAD_SUBDIRS['PROJECT_PPRT']}/"
-                # project_file_url = os.path.join("/uploads", UPLOAD_SUBDIRS["PROJECT_PPRT"], proj["project_pprt"])
-            # print(proj)
+                # project_file_url = f"{UPLOAD_FOLDER}/{UPLOAD_SUBDIRS['PROJECT_PPRT']}/"
+                project_file_url = f"{BASE_UPLOAD_URL}/{UPLOAD_SUBDIRS['PROJECT_PPRT']}/{proj['project_pprt']}"
             result.append(
                 {
                     "project_id": proj["project_id"],
@@ -308,12 +341,12 @@ def list_projects():
                     "project_code": proj["project_code"],
                     "project_description": proj["project_description"],
                     "project_manager_id": proj["project_manager_id"],
-                    "asst_project_managers": asst_managers,
-                    "project_team": project_team,
-                    "qa_users": qas,
+                    "asst_project_manager_ids": asst_manager_ids,
+                    "project_team_ids": project_team_ids,
+                    "qa_user_ids": qa_ids,
                     "project_file": project_file_url,
-                    "created_date": proj["created_date"],  # dd/mm/yyyy hh:mm:ss
-                    "updated_date": proj["updated_date"],  # dd/mm/yyyy hh:mm:ss
+                    "created_date": proj["created_date"],
+                    "updated_date": proj["updated_date"],
                 }
             )
 

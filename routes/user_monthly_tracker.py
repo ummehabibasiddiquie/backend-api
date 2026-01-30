@@ -314,6 +314,7 @@ def list_user_monthly_targets():
     logged_in_user_id = data.get("logged_in_user_id")
     month_year = (data.get("month_year") or "").strip()  # OPTIONAL (MONYYYY)
     filter_user_id = data.get("user_id")  # OPTIONAL
+    filter_team_id = data.get("team_id")  # OPTIONAL
 
     if not logged_in_user_id:
         return api_response(400, "logged_in_user_id is required", None)
@@ -342,6 +343,9 @@ def list_user_monthly_targets():
         if filter_user_id:
             user_where += " AND u.user_id=%s"
             user_params.append(int(filter_user_id))
+        if filter_team_id:
+            user_where += " AND u.team_id=%s"
+            user_params.append(int(filter_team_id))
 
         if my_role_name == "admin" or my_role_name == "super admin":
             pass
@@ -365,7 +369,7 @@ def list_user_monthly_targets():
         # Joins: if month_year is provided, filter by month; else, join without month filter
         if month_year:
             umt_join = """
-                LEFT JOIN user_monthly_tracker umt
+                INNER JOIN user_monthly_tracker umt
                   ON umt.user_id = u.user_id
                  AND umt.is_active=1
                  AND umt.month_year=%s

@@ -104,100 +104,186 @@ def get():
 
         # -------------------- ROLE-BASED USER LIST -------------------- #
         if dropdown_type in ROLE_BASED_USER_DROPDOWNS:
-            query = """
-                SELECT
-                    u.user_id,
-                    u.user_name AS label
-                FROM tfs_user u
-                JOIN user_role r ON r.role_id = u.role_id
-                WHERE u.is_active = 1
-                  AND u.is_delete = 1
-                  AND r.is_active = 1
-                  AND LOWER(r.role_name) = %s
-                ORDER BY u.user_name
-            """
-            params = (dropdown_type,)
-
-            cursor.execute(query, params)
-            result = cursor.fetchall()
-
-            for item in result:
-                if item.get("label"):
-                    item["label"] = item["label"].title()
-
-            return api_response(200, "Dropdown data fetched successfully", result)
+            project_id = data.get("project_id")
+            if dropdown_type == "agent" and project_id:
+                # Only return agents assigned to this project (robust for all formats)
+                v = str(project_id)
+                query = f"""
+                    SELECT
+                        u.user_id,
+                        u.user_name AS label
+                    FROM tfs_user u
+                    JOIN user_role r ON r.role_id = u.role_id
+                    JOIN project p ON p.project_id = %s
+                    WHERE u.is_active = 1
+                      AND u.is_delete = 1
+                      AND r.is_active = 1
+                      AND LOWER(r.role_name) = %s
+                      AND (
+                        FIND_IN_SET(CAST(u.user_id AS CHAR), REPLACE(REPLACE(REPLACE(REPLACE(p.project_team_id,'[',''),']',''), '"', ''),' ','')) > 0
+                      )
+                    ORDER BY u.user_name
+                """
+                params = (project_id, dropdown_type)
+                cursor.execute(query, params)
+                result = cursor.fetchall()
+                for item in result:
+                    if item.get("label"):
+                        item["label"] = item["label"].title()
+                return api_response(200, "Dropdown data fetched successfully", result)
+            elif dropdown_type == "assistant manager" and project_id:
+                # Only return assistant managers assigned to this project (robust for all formats)
+                v = str(project_id)
+                query = f"""
+                    SELECT
+                        u.user_id,
+                        u.user_name AS label
+                    FROM tfs_user u
+                    JOIN user_role r ON r.role_id = u.role_id
+                    JOIN project p ON p.project_id = %s
+                    WHERE u.is_active = 1
+                      AND u.is_delete = 1
+                      AND r.is_active = 1
+                      AND LOWER(r.role_name) = %s
+                      AND (
+                        FIND_IN_SET(CAST(u.user_id AS CHAR), REPLACE(REPLACE(REPLACE(REPLACE(p.asst_project_manager_id,'[',''),']',''), '"', ''),' ','')) > 0
+                      )
+                    ORDER BY u.user_name
+                """
+                params = (project_id, dropdown_type)
+                cursor.execute(query, params)
+                result = cursor.fetchall()
+                for item in result:
+                    if item.get("label"):
+                        item["label"] = item["label"].title()
+                return api_response(200, "Dropdown data fetched successfully", result)
+            elif dropdown_type == "agent":
+                # Return all agents
+                query = """
+                    SELECT
+                        u.user_id,
+                        u.user_name AS label
+                    FROM tfs_user u
+                    JOIN user_role r ON r.role_id = u.role_id
+                    WHERE u.is_active = 1
+                      AND u.is_delete = 1
+                      AND r.is_active = 1
+                      AND LOWER(r.role_name) = %s
+                    ORDER BY u.user_name
+                """
+                params = (dropdown_type,)
+                cursor.execute(query, params)
+                result = cursor.fetchall()
+                for item in result:
+                    if item.get("label"):
+                        item["label"] = item["label"].title()
+                return api_response(200, "Dropdown data fetched successfully", result)
+            else:
+                # All other roles
+                query = """
+                    SELECT
+                        u.user_id,
+                        u.user_name AS label
+                    FROM tfs_user u
+                    JOIN user_role r ON r.role_id = u.role_id
+                    WHERE u.is_active = 1
+                      AND u.is_delete = 1
+                      AND r.is_active = 1
+                      AND LOWER(r.role_name) = %s
+                    ORDER BY u.user_name
+                """
+                params = (dropdown_type,)
+                cursor.execute(query, params)
+                result = cursor.fetchall()
+                for item in result:
+                    if item.get("label"):
+                        item["label"] = item["label"].title()
+                return api_response(200, "Dropdown data fetched successfully", result)
 
         # -------------------- PROJECTS WITH TASKS -------------------- #
         if dropdown_type == "projects with tasks":
+            user_id = data.get("user_id")
             logged_in_user_id = data.get("logged_in_user_id")
-            if not logged_in_user_id:
-                return api_response(400, "logged_in_user_id is required for projects with tasks")
-
-            logged_in_user_id = int(logged_in_user_id)
-            logged_role = get_user_role(cursor, logged_in_user_id)
-            if not logged_role:
-                return api_response(404, "Logged in user not found")
-
-            # Role scope
-            params: list = []
-            where_sql = "WHERE p.is_active = 1"
-
-            if logged_role in ["admin", "super admin"]:
-                pass
-
-            elif logged_role == "qa":
-                v = str(logged_in_user_id)
-                where_sql += " AND " + multi_id_match_sql("p.project_qa_id")
-                params.extend([v, v])
-
-            elif logged_role in ["project manager", "manager"]:
-                v = str(logged_in_user_id)
-                where_sql += " AND " + multi_id_match_sql("p.project_manager_id")
-                params.extend([v, v])
-
-            elif logged_role == "assistant manager":
-                v = str(logged_in_user_id)
-                where_sql += " AND " + multi_id_match_sql("p.asst_project_manager_id")
-                params.extend([v, v])
-
-            elif logged_role == "agent":
-                # ✅ NO tracker dependency: check assignment inside project_team_id
-                v = str(logged_in_user_id)
-                where_sql += " AND " + multi_id_match_sql("p.project_team_id")
-                params.extend([v, v])
-
-            else:
-                # safest fallback: same as agent assignment rule
-                v = str(logged_in_user_id)
-                where_sql += " AND " + multi_id_match_sql("p.project_team_id")
-                params.extend([v, v])
-
-            # ✅ Optional: filter tasks by task_team_id for agent
-            task_join_extra = ""
-            task_params: list = []
-            if logged_role == "agent":
-                v = str(logged_in_user_id)
+            if user_id:
+                # Only return projects/tasks assigned to this user (regardless of role, including agent logic)
+                v = str(user_id)
+                params = [v, v]
+                where_sql = "WHERE p.is_active = 1 AND " + multi_id_match_sql("p.project_team_id")
                 task_join_extra = " AND " + multi_id_match_sql("t.task_team_id")
-                task_params.extend([v, v])
-
-            query = f"""
-                SELECT
-                    p.project_id,
-                    p.project_name,
-                    t.task_id,
-                    t.task_name,
-                    t.task_target
-                FROM project p
-                LEFT JOIN task t
-                    ON t.project_id = p.project_id
-                    AND t.is_active = 1
-                    {task_join_extra}
-                {where_sql}
-                ORDER BY p.project_name, t.task_name
-            """
-
-            cursor.execute(query, tuple(params + task_params))
-            rows = cursor.fetchall()
+                task_params = [v, v]
+                query = f"""
+                    SELECT
+                        p.project_id,
+                        p.project_name,
+                        t.task_id,
+                        t.task_name,
+                        t.task_target
+                    FROM project p
+                    LEFT JOIN task t
+                        ON t.project_id = p.project_id
+                        AND t.is_active = 1
+                        {task_join_extra}
+                    {where_sql}
+                    ORDER BY p.project_name, t.task_name
+                """
+                cursor.execute(query, tuple(params + task_params))
+                rows = cursor.fetchall()
+            else:
+                # Use logged_in_user_id and role-based filtering
+                if not logged_in_user_id:
+                    return api_response(400, "logged_in_user_id or user_id is required for projects with tasks")
+                filter_id = int(logged_in_user_id)
+                user_role = get_user_role(cursor, filter_id)
+                if not user_role:
+                    return api_response(404, "User not found")
+                params: list = []
+                where_sql = "WHERE p.is_active = 1"
+                if user_role in ["admin", "super admin"]:
+                    pass
+                elif user_role == "qa":
+                    v = str(filter_id)
+                    where_sql += " AND " + multi_id_match_sql("p.project_qa_id")
+                    params.extend([v, v])
+                elif user_role in ["project manager", "manager"]:
+                    v = str(filter_id)
+                    where_sql += " AND " + multi_id_match_sql("p.project_manager_id")
+                    params.extend([v, v])
+                elif user_role == "assistant manager":
+                    v = str(filter_id)
+                    where_sql += " AND " + multi_id_match_sql("p.asst_project_manager_id")
+                    params.extend([v, v])
+                elif user_role == "agent":
+                    v = str(filter_id)
+                    where_sql += " AND " + multi_id_match_sql("p.project_team_id")
+                    params.extend([v, v])
+                else:
+                    v = str(filter_id)
+                    where_sql += " AND " + multi_id_match_sql("p.project_team_id")
+                    params.extend([v, v])
+                # Optional: filter tasks by task_team_id for agent
+                task_join_extra = ""
+                task_params: list = []
+                if user_role == "agent":
+                    v = str(filter_id)
+                    task_join_extra = " AND " + multi_id_match_sql("t.task_team_id")
+                    task_params.extend([v, v])
+                query = f"""
+                    SELECT
+                        p.project_id,
+                        p.project_name,
+                        t.task_id,
+                        t.task_name,
+                        t.task_target
+                    FROM project p
+                    LEFT JOIN task t
+                        ON t.project_id = p.project_id
+                        AND t.is_active = 1
+                        {task_join_extra}
+                    {where_sql}
+                    ORDER BY p.project_name, t.task_name
+                """
+                cursor.execute(query, tuple(params + task_params))
+                rows = cursor.fetchall()
 
             projects_map = {}
             for row in rows:

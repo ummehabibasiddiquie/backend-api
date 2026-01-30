@@ -1,11 +1,9 @@
 from flask import Blueprint, request
-from config import get_db_connection,UPLOAD_FOLDER, UPLOAD_SUBDIRS
+from config import get_db_connection, BASE_UPLOAD_URL, UPLOAD_SUBDIRS
 from utils.response import api_response
 from utils.file_utils import save_base64_file
 from utils.api_log_utils import log_api_call
 from datetime import datetime
-import os
-# from flask_cors import cross_origin
 
 tracker_bp = Blueprint("tracker", __name__)
 
@@ -19,7 +17,7 @@ def calculate_targets(base_target, user_tenure):
     tenure_target = round(base_target * user_tenure, 2)
     return actual_target, tenure_target
 
-# @cross_origin()
+
 # ------------------------
 # ADD TRACKER
 # ------------------------
@@ -43,13 +41,12 @@ def add_tracker():
     billable_hours = production / tenure_target
 
     if tracker_file_base64:
-        tracker_file = save_base64_file(tracker_file_base64, UPLOAD_SUBDIRS['TRACKER_FILES'])
+        tracker_file = save_base64_file(tracker_file_base64, UPLOAD_SUBDIRS["TRACKER_FILES"])
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # Fetch user tenure
         cursor.execute("SELECT task_target FROM task WHERE task_id=%s", (task_id,))
         user = cursor.fetchone()
         if not user:
@@ -58,24 +55,44 @@ def add_tracker():
         actual_target = user["task_target"]
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO task_work_tracker
-            (project_id, task_id, user_id, production, actual_target, tenure_target, billable_hours, tracker_file, tracker_file_base64, is_active, date_time, updated_date)
+            (project_id, task_id, user_id, production, actual_target, tenure_target, billable_hours,
+             tracker_file, tracker_file_base64, is_active, date_time, updated_date)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """, (project_id, task_id, user_id, production, actual_target, tenure_target, billable_hours, tracker_file, tracker_file_base64, is_active, now, now))
+            """,
+            (
+                project_id,
+                task_id,
+                user_id,
+                production,
+                actual_target,
+                tenure_target,
+                billable_hours,
+                tracker_file,
+                tracker_file_base64,
+                is_active,
+                now,
+                now,
+            ),
+        )
 
         conn.commit()
         tracker_id = cursor.lastrowid
+
         # Log only on success
         device_id = data.get("device_id")
         device_type = data.get("device_type")
         api_call_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_api_call("add_tracker", user_id, device_id, device_type, api_call_time)
+
         return api_response(201, "Tracker added successfully", {"tracker_id": tracker_id})
 
     except Exception as e:
         conn.rollback()
         return api_response(500, f"Failed to add tracker: {str(e)}")
+
     finally:
         cursor.close()
         conn.close()
@@ -99,9 +116,9 @@ def update_tracker():
         tracker = cursor.fetchone()
         if not tracker:
             return api_response(404, "Tracker not found")
-        # print(tracker)
+
         new_user_id = tracker["user_id"]
-        # print(new_user_id)
+
         cursor.execute("SELECT user_tenure FROM tfs_user WHERE user_id=%s", (new_user_id,))
         user = cursor.fetchone()
         if not user:
@@ -113,28 +130,44 @@ def update_tracker():
         tracker_file_base64 = data.get("tracker_file_base64")
         tracker_file = tracker["tracker_file"]
         if tracker_file_base64:
-            tracker_file = save_base64_file(tracker_file_base64, UPLOAD_SUBDIRS['TRACKER_FILES'])
+            tracker_file = save_base64_file(tracker_file_base64, UPLOAD_SUBDIRS["TRACKER_FILES"])
 
         actual_target, tenure_target = calculate_targets(base_target, user["user_tenure"])
         updated_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE task_work_tracker
-            SET user_id=%s, production=%s, actual_target=%s, tenure_target=%s, tracker_file=%s, tracker_file_base64=%s, updated_date=%s
+            SET user_id=%s, production=%s, actual_target=%s, tenure_target=%s,
+                tracker_file=%s, tracker_file_base64=%s, updated_date=%s
             WHERE tracker_id=%s
-        """, (new_user_id, production, actual_target, tenure_target, tracker_file, tracker_file_base64, updated_date, tracker_id))
+            """,
+            (
+                new_user_id,
+                production,
+                actual_target,
+                tenure_target,
+                tracker_file,
+                tracker_file_base64,
+                updated_date,
+                tracker_id,
+            ),
+        )
 
         conn.commit()
+
         # Log only on success
         device_id = data.get("device_id")
         device_type = data.get("device_type")
         api_call_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_api_call("update_tracker", tracker["user_id"], device_id, device_type, api_call_time)
+
         return api_response(200, "Tracker updated successfully")
 
     except Exception as e:
         conn.rollback()
         return api_response(500, f"Failed to update tracker: {str(e)}")
+
     finally:
         cursor.close()
         conn.close()
@@ -149,11 +182,6 @@ TRACKER_YEAR_MONTH = f"(YEAR({TRACKER_DT})*100 + MONTH({TRACKER_DT}))"
 
 
 def get_role_context(cursor, user_id: int) -> dict:
-    """
-    Single helper:
-      - get logged in user's role_name
-      - get agent_role_id for filtering other APIs if needed
-    """
     cursor.execute(
         """
         SELECT
@@ -194,18 +222,16 @@ def view_trackers():
             return api_response(400, "logged_in_user_id is required")
 
         # month_year (optional) -> default current month (MONYYYY like JAN2026)
-        month_year = (data.get("month_year") or "").strip().upper()
+        month_year = (data.get("month_year") or "").strip()
         if not month_year:
-            cursor.execute("SELECT UPPER(DATE_FORMAT(CURDATE(), '%b%Y')) AS m")
+            cursor.execute("SELECT DATE_FORMAT(CURDATE(), '%b%Y') AS m")
             month_year = (cursor.fetchone() or {}).get("m") or ""
 
         # role from DB (NOT from payload)
         ctx = get_role_context(cursor, int(logged_in_user_id))
         role_name = ctx["user_role_name"]
 
-        # --------------------------------------------
-        # 1) Trackers list query (now with month_year filter if provided)
-        # --------------------------------------------
+        # 1) Trackers list query
         query = """
             SELECT 
                 twt.*,
@@ -221,26 +247,34 @@ def view_trackers():
             LEFT JOIN team t ON u.team_id = t.team_id
             WHERE twt.is_active != 0
         """
-        # Add month_year filter to main tracker list if provided
+
+        # Add month_year filter (same behavior as your previous code: month_year is always set)
         if month_year:
-            from datetime import datetime
             try:
-                dt = datetime.strptime(month_year, "%b%Y")
+                month_part = month_year[:3].capitalize()
+                year_part = month_year[3:]
+                norm_month_year = f"{month_part}{year_part}"
+                dt = datetime.strptime(norm_month_year, "%b%Y")
                 year = dt.year
                 month = dt.month
+                # KEEPING LOGIC: using YEAR(twt.date_time)/MONTH(twt.date_time) like your original
                 query += " AND YEAR(twt.date_time) = %s AND MONTH(twt.date_time) = %s"
                 params.append(year)
                 params.append(month)
             except Exception:
                 pass
 
-        # 1) If specific user_id requested -> keep your same logic
+        # Filter by team_id if provided
+        if data.get("team_id"):
+            query += " AND u.team_id=%s"
+            params.append(data["team_id"])
+
+        # 1) If specific user_id requested -> same logic
         if data.get("user_id"):
             query += " AND twt.user_id=%s"
             params.append(data["user_id"])
-
-        # 2) Else apply manager restriction (unless admin)
         else:
+            # 2) Else apply manager restriction (unless admin) -> same logic
             if role_name == "admin" or role_name == "super admin":
                 pass  # admin sees all
             elif logged_in_user_id:
@@ -262,10 +296,17 @@ def view_trackers():
                           )
                     )
                 """
-                params.extend([
-                    manager_id_str, manager_id_str, manager_id_str, manager_id_str,
-                    manager_id_str, manager_id_str, manager_id_str
-                ])
+                params.extend(
+                    [
+                        manager_id_str,
+                        manager_id_str,
+                        manager_id_str,
+                        manager_id_str,
+                        manager_id_str,
+                        manager_id_str,
+                        manager_id_str,
+                    ]
+                )
 
         # existing filters (same logic, prefixed with twt.)
         if data.get("project_id"):
@@ -299,7 +340,8 @@ def view_trackers():
         cursor.execute(query, tuple(params))
         trackers = cursor.fetchall()
 
-        tracker_files_url = f"{UPLOAD_FOLDER}/{UPLOAD_SUBDIRS['TRACKER_FILES']}/"
+        # tracker_files_url = f"{UPLOAD_FOLDER}/{UPLOAD_SUBDIRS['TRACKER_FILES']}/"
+        tracker_files_url = f"{BASE_UPLOAD_URL}/{UPLOAD_SUBDIRS['TRACKER_FILES']}/"
         for t in trackers:
             tracker_file_temp = t.get("tracker_file")
             if tracker_file_temp:
@@ -307,12 +349,7 @@ def view_trackers():
             else:
                 t["tracker_file"] = None
 
-        # --------------------------------------------
-        # 2) Month-wise summary (per user in result)
-        # daily_required_hours =
-        #   (monthly_total_target - achieved_month_billable_hours) / pending_days
-        # pending_days = UMT.working_days - worked_days_till_today(month-wise distinct days)
-        # --------------------------------------------
+        # 2) Month-wise summary (same logic)
         user_ids = sorted({t.get("user_id") for t in trackers if t.get("user_id") is not None})
         month_summary = []
 
@@ -335,7 +372,6 @@ def view_trackers():
                       + COALESCE(umt.extra_assigned_hours, 0)
                     ) AS monthly_total_target,
 
-                    -- achieved billable hours (month-wise)
                     COALESCE((
                       SELECT SUM(twt3.production / NULLIF(twt3.tenure_target, 0))
                       FROM task_work_tracker twt3
@@ -344,7 +380,6 @@ def view_trackers():
                         AND (YEAR(CAST(twt3.date_time AS DATETIME))*100 + MONTH(CAST(twt3.date_time AS DATETIME))) = m.yyyymm
                     ), 0) AS total_billable_hours_month,
 
-                    -- pending_days = working_days(from UMT) - worked_days_till_today(month-wise)
                     CASE
                       WHEN umt.user_monthly_tracker_id IS NULL THEN NULL
                       ELSE GREATEST(
@@ -361,7 +396,6 @@ def view_trackers():
                            )
                     END AS pending_days,
 
-                    -- daily_required_hours = (target - achieved) / pending_days
                     CASE
                       WHEN umt.user_monthly_tracker_id IS NULL THEN NULL
                       WHEN GREATEST(
@@ -409,7 +443,6 @@ def view_trackers():
 
                 FROM tfs_user u
 
-                -- month context computed once
                 CROSS JOIN (
                     SELECT
                       %s AS mon,
@@ -432,25 +465,24 @@ def view_trackers():
 
                 WHERE u.user_id IN ({in_ph})
             """
-            
-            # month_year params only for CROSS JOIN context, then user_ids
+
             summary_params = [
-                month_year,  # m.mon
-                month_year,  # yyyymm
-                month_year,  # cutoff compare (==)
-                month_year,  # cutoff compare (>)
-                month_year,  # LAST_DAY
-                month_year,  # future-case start
+                month_year,
+                month_year,
+                month_year,
+                month_year,
+                month_year,
+                month_year,
             ] + user_ids
 
             cursor.execute(summary_query, tuple(summary_params))
             month_summary = cursor.fetchall()
 
+            # Log only on success (same behavior as your code: only logs when user_ids exists)
             device_id = data.get("device_id")
             device_type = data.get("device_type")
             api_call_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             log_api_call("view_trackers", logged_in_user_id, device_id, device_type, api_call_time)
-        
 
         return api_response(
             200,
@@ -471,8 +503,6 @@ def view_trackers():
         conn.close()
 
 
-
-
 # ------------------------
 # DELETE TRACKER (SOFT DELETE)
 # ------------------------
@@ -490,8 +520,8 @@ def delete_tracker():
     try:
         # Check tracker exists
         cursor.execute(
-            "SELECT tracker_id FROM task_work_tracker WHERE tracker_id=%s",
-            (tracker_id,)
+            "SELECT tracker_id, user_id FROM task_work_tracker WHERE tracker_id=%s",
+            (tracker_id,),
         )
         tracker = cursor.fetchone()
 
@@ -499,18 +529,23 @@ def delete_tracker():
             return api_response(404, "Tracker not found")
 
         # Soft delete
-        cursor.execute("""
+        cursor.execute(
+            """
             UPDATE task_work_tracker
             SET is_active = 0
             WHERE tracker_id = %s
-        """, (tracker_id,))
+            """,
+            (tracker_id,),
+        )
 
         conn.commit()
+
         # Log only on success
         device_id = data.get("device_id")
         device_type = data.get("device_type")
         api_call_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_api_call("delete_tracker", tracker["user_id"], device_id, device_type, api_call_time)
+
         return api_response(200, "Tracker deleted successfully")
 
     except Exception as e:
