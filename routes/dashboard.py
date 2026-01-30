@@ -1,7 +1,7 @@
 # routes/dashboard.py
 
 from flask import Blueprint, request
-from config import get_db_connection, UPLOAD_FOLDER, UPLOAD_SUBDIRS
+from config import get_db_connection, UPLOAD_FOLDER, UPLOAD_SUBDIRS, BASE_UPLOAD_URL
 from utils.response import api_response
 
 dashboard_bp = Blueprint("dashboard", __name__, url_prefix="/dashboard")
@@ -411,7 +411,9 @@ def dashboard_filter():
         cursor.execute(tracker_query, tuple(params))
         tracker_rows = cursor.fetchall()
 
-        tracker_files_url = f"{UPLOAD_FOLDER}/{UPLOAD_SUBDIRS['TRACKER_FILES']}/"
+        # tracker_files_url = f"{UPLOAD_FOLDER}/{UPLOAD_SUBDIRS['TRACKER_FILES']}/"
+        tracker_files_url = f"{BASE_UPLOAD_URL}/{UPLOAD_SUBDIRS['TRACKER_FILES']}/"
+        
         for t in tracker_rows:
             tracker_file_temp = t.get("tracker_file")
             t["tracker_file"] = tracker_files_url + tracker_file_temp if tracker_file_temp else None
