@@ -59,15 +59,32 @@ def user_handler():
                 return api_response(403, "User account is inactive")
 
             # Password check
-            # if not verify_password(
-                # user_password,
-                # user["user_password"].encode()
-                # if isinstance(user["user_password"], str)
-                # else user["user_password"]
-            # ):
-                # return api_response(401, "Invalid email or password")
-                
-            if not user_password :
+            stored_password = user["user_password"]
+            is_hashed = isinstance(stored_password, str) and (stored_password.startswith('$2b$') or stored_password.startswith('$2a$'))
+
+            password_matches = False
+            if is_hashed:
+                # For new users with hashed passwords
+                password_matches = verify_password(user_password, stored_password.encode())
+            else:
+                # For existing users with plain-text passwords
+                password_matches = (user_password == stored_password)
+                if password_matches:
+                    # Upgrade plain-text password to a hash
+                    try:
+                        hashed_password = hash_password(user_password)
+                        conn_update = get_db_connection()
+                        cursor_update = conn_update.cursor()
+                        cursor_update.execute("UPDATE tfs_user SET user_password = %s WHERE user_id = %s", (hashed_password, user['user_id']))
+                        conn_update.commit()
+                        cursor_update.close()
+                        conn_update.close()
+                    except Exception as e:
+                        # Log this error, but don't block login
+                        print(f"Could not upgrade password for user {user['user_id']}: {e}")
+
+
+            if not password_matches:
                 return api_response(401, "Invalid email or password")
             
             if user["profile_picture"] :
