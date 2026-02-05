@@ -4,6 +4,7 @@ from utils.response import api_response
 from config import get_db_connection, UPLOAD_SUBDIRS, BASE_UPLOAD_URL, UPLOAD_FOLDER
 from utils.validators import validate_request
 from utils.json_utils import to_db_json
+from utils.security import decrypt_password, encrypt_password, safe_decrypt_password
 from datetime import datetime
 import json
 import os
@@ -236,6 +237,13 @@ def list_users():
 
         # ✅ absolute url
         _attach_profile_picture_url(users)
+        
+        # Decrypt passwords for frontend display
+        # Handle both encrypted and plain text passwords
+        for user in users:
+            if user.get("user_password"):
+                # Use safe_decrypt_password to handle both formats
+                user["user_password"] = safe_decrypt_password(user["user_password"])
 
         return api_response(200, "Users fetched successfully", users)
 
@@ -289,6 +297,11 @@ def update_user():
             "asst_manager_id": to_db_json(form.get("asst_manager_id"), allow_single=True),
             "qa_id": to_db_json(form.get("qa_id"), allow_single=True),
         }
+
+        # Encrypt password if provided
+        user_password = form.get("user_password")
+        if user_password:
+            user_fields["user_password"] = encrypt_password(user_password)
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         user_update_cols = []
