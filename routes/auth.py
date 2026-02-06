@@ -1,6 +1,7 @@
 from flask import Blueprint, request
 from config import get_db_connection, BASE_UPLOAD_URL, UPLOAD_SUBDIRS
 from utils.response import api_response
+from utils.security import encrypt_password, decrypt_password, safe_decrypt_password
 from datetime import datetime
 from utils.validators import (
     is_valid_username,
@@ -116,7 +117,14 @@ def user_handler():
                 return api_response(403, "User account is inactive")
 
             stored_password = user.get("user_password")
-            if stored_password is None or user_password != stored_password:
+            if stored_password is None:
+                return api_response(401, "Invalid email or password")
+            
+            # Use safe_decrypt_password to handle both encrypted and plain text
+            # This function returns decrypted password or original plain text
+            final_password = safe_decrypt_password(stored_password)
+            
+            if user_password != final_password:
                 return api_response(401, "Invalid email or password")
 
             if user.get("profile_picture"):
@@ -146,7 +154,8 @@ def user_handler():
 
     user_name = form["user_name"].strip()
     user_email = form["user_email"].strip().lower()
-    user_password = form["user_password"]
+    # user_password = form["user_password"]
+    user_password = encrypt_password(form["user_password"])
     role_id = str(form["role_id"]).strip().lower()
 
     designation_id = form.get("designation_id")

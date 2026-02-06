@@ -11,6 +11,7 @@ from routes.project_monthly_tracker import project_monthly_tracker_bp
 from routes.user_monthly_tracker import user_monthly_tracker_bp
 from routes.api_log_list import api_log_list_bp
 from routes.password_reset import password_reset_bp
+from routes.qc import qc_bp
 
 from flask_cors import CORS
 import os
@@ -33,11 +34,12 @@ app.register_blueprint(project_monthly_tracker_bp,url_prefix=f"/project_monthly_
 app.register_blueprint(user_monthly_tracker_bp,url_prefix=f"/user_monthly_tracker")
 app.register_blueprint(api_log_list_bp, url_prefix="/api_log_list")
 app.register_blueprint(password_reset_bp, url_prefix="/password_reset")
+app.register_blueprint(qc_bp, url_prefix="/qc")
 
-print("\n==== REGISTERED ROUTES ====")
-for r in app.url_map.iter_rules():
-    print(r, r.methods)
-print("==== END ROUTES ====\n")
+# print("\n==== REGISTERED ROUTES ====")
+# for r in app.url_map.iter_rules():
+#     print(r, r.methods)
+# print("==== END ROUTES ====\n")
 
 
 # CORS(app, supports_credentials=True)

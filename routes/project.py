@@ -263,9 +263,19 @@ def update_project():
             if form.get(key) is not None:
                 update_values[key] = json.dumps(_get_form_json_list(form, key))
 
-        # file replace (if new files provided)
+        # --- FILE LOGIC ---
         uploaded_files = _get_uploaded_files()
-        if uploaded_files:
+
+        # ✅ explicit clear signal from frontend/postman
+        clear_files = (form.get("clear_files") or "").strip().lower() in ("1", "true", "yes")
+
+        if clear_files:
+            # delete old files + set DB to empty array
+            old_files_to_delete = parse_db_files(existing.get("project_pprt"))
+            update_values["project_pprt"] = json.dumps([])
+
+        elif uploaded_files:
+            # replace with new uploaded files
             old_files_to_delete = parse_db_files(existing.get("project_pprt"))
 
             use_project_name = update_values.get("project_name") or existing.get("project_name") or "PROJECT"
@@ -279,6 +289,7 @@ def update_project():
 
             update_values["project_pprt"] = json.dumps(new_saved_files)
 
+        # if nothing to update
         if not update_values:
             conn.rollback()
             return api_response(400, "No valid fields provided for update")
@@ -297,15 +308,19 @@ def update_project():
         if old_files_to_delete:
             safe_remove_project_files(old_files_to_delete)
 
-        return api_response(200, "Project updated successfully", {
-            "files": files_to_urls(new_saved_files) if new_saved_files else None
-        })
+        # response
+        if "project_pprt" in update_values:
+            final_files = parse_db_files(update_values["project_pprt"])
+            return api_response(200, "Project updated successfully", {"files": files_to_urls(final_files)})
+
+        return api_response(200, "Project updated successfully")
 
     except Exception as e:
         conn.rollback()
         # cleanup new saved files if update failed
         safe_remove_project_files(new_saved_files)
         return api_response(500, f"Project update failed: {str(e)}")
+
     finally:
         cursor.close()
         conn.close()

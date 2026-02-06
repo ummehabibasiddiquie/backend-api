@@ -9,6 +9,9 @@ from utils.validators import validate_request, is_valid_email, is_valid_password
 # ✅ NEW: reusable email util (SMTP / provider)
 from utils.email_utils import send_email
 
+# ✅ NEW: use same encryption as user.py
+from utils.security import encrypt_password
+
 password_reset_bp = Blueprint("password_reset", __name__)
 
 RESET_SALT = "tfshrms-password-reset"
@@ -24,27 +27,101 @@ def _load_token(token: str):
 
 
 def _build_reset_email_html(reset_link: str) -> str:
+    print(RESET_FRONTEND_URL)
     ttl_minutes = int(int(RESET_TOKEN_TTL_SECONDS) / 60) if RESET_TOKEN_TTL_SECONDS else 15
     return f"""
-    <div style="font-family: Arial, sans-serif; line-height: 1.5;">
-      <p>Hello,</p>
-
-      <p>You requested to reset your password.</p>
-
-      <p>
-        <a href="{reset_link}"
-           style="display:inline-block;padding:10px 16px;background:#2563eb;color:#ffffff;
-                  text-decoration:none;border-radius:6px;">
-          Reset Password
-        </a>
-      </p>
-
-      <p>This link will expire in <b>{ttl_minutes} minutes</b>.</p>
-
-      <p>If you did not request this, you can safely ignore this email.</p>
-
-      <p>— Transform Solution</p>
-    </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Password Reset</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f1f5f9; font-family:Arial, Helvetica, sans-serif;">
+ 
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color:#f1f5f9;">
+<tr>
+<td align="center" style="padding:40px 15px;">
+ 
+        <!-- Container -->
+<table width="500" cellpadding="0" cellspacing="0" role="presentation"
+          style="background-color:#ffffff; border-radius:10px; border:1px solid #d1d5db;">
+ 
+          <!-- Header -->
+<tr>
+<td align="center"
+              style="background-color:#2563eb; padding:24px; border-radius:10px 10px 0 0;">
+<h2 style="margin:0; color:#ffffff; font-size:20px;">
+                Password Reset
+</h2>
+</td>
+</tr>
+ 
+          <!-- Body -->
+<tr>
+<td style="padding:30px; color:#1f2937; font-size:14px; line-height:1.6;">
+ 
+              <p style="margin:0 0 15px;">
+                Hello,
+</p>
+ 
+              <p style="margin:0 0 25px;">
+                We received a request to reset your password. Click the button below to create a new password.
+</p>
+ 
+              <!-- Button -->
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+<tr>
+<td align="center" style="padding-bottom:25px;">
+<a href="{reset_link}"
+                      style="display:inline-block; background-color:#2563eb; color:#ffffff;
+                      padding:12px 30px; text-decoration:none; border-radius:6px;
+                      font-size:15px; font-weight:bold;">
+                      Reset Password
+</a>
+</td>
+</tr>
+</table>
+ 
+              <!-- Expiry Box -->
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation"
+                style="background-color:#fff7ed; border:1px solid #f59e0b; border-radius:6px; margin-bottom:20px;">
+<tr>
+<td style="padding:12px; color:#92400e; font-size:13px;">
+                    ⏰ This link expires in <strong>5 minutes</strong>
+</td>
+</tr>
+</table>
+ 
+              <p style="margin:0 0 15px; color:#374151;">
+                If you did not request a password reset, you can safely ignore this email.
+</p>
+ 
+              <p style="margin:0; color:#374151;">
+                Best regards,<br />
+<strong>Transform Solution Pvt. Ltd.</strong>
+</p>
+ 
+            </td>
+</tr>
+ 
+          <!-- Footer -->
+<tr>
+<td align="center"
+              style="background-color:#f3f4f6; padding:15px; border-radius:0 0 10px 10px;
+              color:#6b7280; font-size:11px;">
+              © 2026 Transform Solution. All rights reserved.
+</td>
+</tr>
+ 
+        </table>
+ 
+      </td>
+</tr>
+</table>
+ 
+</body>
+</html>
     """
 
 
@@ -84,14 +161,12 @@ def forgot_password():
         token = serializer.dumps(payload, salt=RESET_SALT)
         reset_link = f"{RESET_FRONTEND_URL}?token={token}"
 
-        # ✅ NEW: send email (does not change your current API response logic)
+        # ✅ send email (does not change your current API response logic)
         try:
             subject = "Reset your password"
             html_body = _build_reset_email_html(reset_link)
             send_email(user_email, subject, html_body)
         except Exception as mail_err:
-            # Keep behavior unchanged: don't fail the API if email fails.
-            # Log it for debugging.
             print(f"[forgot_password] Email send failed for {user_email}: {mail_err}")
 
         # ✅ Backend-only for now: return token/link so you can test (unchanged)
@@ -201,13 +276,14 @@ def reset_password():
 
         updated_date = _now_str()
 
-        # NOTE: you currently store plaintext passwords.
-        # Later replace new_password with hash_password(new_password)
+        # ✅ store encrypted password (same as user.py)
+        enc_pwd = encrypt_password(new_password)
+
         cursor.execute("""
             UPDATE tfs_user
             SET user_password=%s, updated_date=%s
             WHERE user_id=%s AND is_delete != 0
-        """, (new_password, updated_date, user_id))
+        """, (enc_pwd, updated_date, user_id))
 
         conn.commit()
         return api_response(200, "Password reset successfully")

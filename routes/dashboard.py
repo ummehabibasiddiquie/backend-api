@@ -76,6 +76,48 @@ def apply_tracker_filters(data: dict, where_sql: str, params: list) -> tuple[str
 
 
 # -----------------------------
+# QC FILTER HELPERS (NEW - does not change existing tracker logic)
+# temp_qc.date is TEXT 'YYYY-MM-DD'
+# -----------------------------
+def _date_only(val: str | None) -> str | None:
+    """Accepts 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS' and returns 'YYYY-MM-DD'."""
+    if not val:
+        return None
+    s = str(val).strip()
+    if len(s) >= 10:
+        return s[:10]
+    return None
+
+
+def apply_qc_filters(data: dict, where_sql: str, params: list) -> tuple[str, list]:
+    """
+    Apply SAME date/date_from/date_to/user_id filters but on temp_qc.date.
+    IMPORTANT: uses tq.date (NOT updated_date).
+    """
+    if data.get("user_id"):
+        where_sql += " AND tq.user_id = %s"
+        params.append(int(data["user_id"]))
+
+    if data.get("date"):
+        where_sql += " AND tq.date = %s"
+        params.append(_date_only(data["date"]))
+
+    if data.get("date_from"):
+        df = _date_only(data["date_from"])
+        if df:
+            where_sql += " AND tq.date >= %s"
+            params.append(df)
+
+    if data.get("date_to"):
+        dt = _date_only(data["date_to"])
+        if dt:
+            where_sql += " AND tq.date <= %s"
+            params.append(dt)
+
+    return where_sql, params
+
+
+# -----------------------------
 # USER → TRACKER SCOPING (IMPORTANT PART)
 # -----------------------------
 def detect_existing_column(cursor, table: str, candidates: list[str]) -> str | None:
@@ -129,7 +171,6 @@ def get_subordinate_user_ids(cursor, role: str, logged_in_user_id: int) -> list[
 
     # ✅ Assistant Manager: MUST come from tfs_user mapping (NOT project table)
     if role == "assistant manager":
-        # Put your real column first (example: assistant_manager_id / asst_manager_id / reporting_manager_id)
         col = detect_existing_column(
             cursor,
             "tfs_user",
@@ -137,11 +178,10 @@ def get_subordinate_user_ids(cursor, role: str, logged_in_user_id: int) -> list[
                 "assistant_manager_id",
                 "asst_manager_id",
                 "asst_reporting_manager_id",
-                "reporting_manager_id",  # if your org uses same column for all managers
+                "reporting_manager_id",
             ],
         )
         if not col:
-            # no mapping column => only self
             return [logged_in_user_id]
 
         cursor.execute(
@@ -355,6 +395,8 @@ def dashboard_filter():
                             "tracker_rows": 0,
                             "total_production": 0,
                             "total_billable_hours": 0,
+                            "avg_qc_score": None,
+                            "qc_days_count": 0,
                         },
                         "users": [],
                         "projects": [],
@@ -363,7 +405,7 @@ def dashboard_filter():
                     },
                 )
 
-        # Apply all existing tracker filters
+        # Apply all existing tracker filters (UNCHANGED)
         where_sql, params = apply_tracker_filters(data, where_sql, params)
 
         # USERS list (from trackers scope)
@@ -411,14 +453,12 @@ def dashboard_filter():
         cursor.execute(tracker_query, tuple(params))
         tracker_rows = cursor.fetchall()
 
-        # tracker_files_url = f"{UPLOAD_FOLDER}/{UPLOAD_SUBDIRS['TRACKER_FILES']}/"
         tracker_files_url = f"{BASE_UPLOAD_URL}/{UPLOAD_SUBDIRS['TRACKER_FILES']}/"
-        
         for t in tracker_rows:
             tracker_file_temp = t.get("tracker_file")
             t["tracker_file"] = tracker_files_url + tracker_file_temp if tracker_file_temp else None
 
-        # SUMMARY
+        # SUMMARY (UNCHANGED)
         summary_query = f"""
             SELECT
                 COUNT(DISTINCT twt.user_id) AS user_count,
@@ -434,13 +474,72 @@ def dashboard_filter():
         summary = cursor.fetchone() or {}
 
         # --------------------
-        # PROJECTS / TASKS (INDIVIDUAL ROLE LOGIC)
+        # QC SUMMARY + QC PER USER (NEW)
+        # Uses temp_qc.date (NOT updated_date)
+        # Respects: visible_user_ids + (user_id/date/date_from/date_to)
+        # Does NOT change tracker logic.
+        # --------------------
+        qc_where = "WHERE 1=1"
+        qc_params: list = []
+
+        if visible_user_ids is not None:
+            qc_where += f" AND tq.user_id {build_in_clause_int(visible_user_ids, qc_params)}"
+
+        qc_where, qc_params = apply_qc_filters(data, qc_where, qc_params)
+
+        # overall avg qc for current dashboard filters
+        qc_summary_query = f"""
+            SELECT
+                ROUND(SUM(tq.qc_score) / NULLIF(COUNT(*), 0), 2) AS avg_qc_score,
+                COUNT(*) AS qc_days_count
+            FROM temp_qc tq
+            {qc_where}
+              AND tq.qc_score IS NOT NULL
+        """
+        cursor.execute(qc_summary_query, tuple(qc_params))
+        qc_summary = cursor.fetchone() or {}
+        summary["avg_qc_score"] = qc_summary.get("avg_qc_score")
+        summary["qc_days_count"] = qc_summary.get("qc_days_count") or 0
+
+        # per-user avg qc
+        qc_user_query = f"""
+            SELECT
+                tq.user_id,
+                ROUND(SUM(tq.qc_score) / NULLIF(COUNT(*), 0), 2) AS avg_qc_score,
+                COUNT(*) AS qc_days_count
+            FROM temp_qc tq
+            {qc_where}
+              AND tq.qc_score IS NOT NULL
+            GROUP BY tq.user_id
+        """
+        cursor.execute(qc_user_query, tuple(qc_params))
+        qc_user_rows = cursor.fetchall() or []
+        qc_user_map = {
+            int(r["user_id"]): {
+                "avg_qc_score": r.get("avg_qc_score"),
+                "qc_days_count": r.get("qc_days_count") or 0,
+            }
+            for r in qc_user_rows
+            if r.get("user_id") is not None
+        }
+
+        # attach qc fields to each user
+        for urow in users:
+            uid = urow.get("user_id")
+            if uid is None:
+                continue
+            info = qc_user_map.get(int(uid), {"avg_qc_score": None, "qc_days_count": 0})
+            urow["avg_qc_score"] = info["avg_qc_score"]
+            urow["qc_days_count"] = info["qc_days_count"]
+
+        # --------------------
+        # PROJECTS / TASKS (INDIVIDUAL ROLE LOGIC) (UNCHANGED)
         # --------------------
         projects = get_projects_for_role(cursor, logged_role, int(logged_in_user_id))
         project_ids = [p["project_id"] for p in projects]
         tasks = get_tasks_for_role(cursor, logged_role, int(logged_in_user_id), project_ids)
 
-        # Billable hours for only returned projects but from SAME tracker scope
+        # Billable hours for only returned projects but from SAME tracker scope (UNCHANGED)
         billable_query = f"""
             SELECT
                 p.project_id,

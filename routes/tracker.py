@@ -676,12 +676,40 @@ def view_trackers():
         conn.close()
 
 
+def normalize_month_year(val):
+    """
+    Accepts: Jan2026 / jan2026 / JAN2026
+    Returns: Jan2026
+    """
+    if not val:
+        return None
+    s = str(val).strip()
+    if not s:
+        return None
+    try:
+        dt = datetime.strptime(s.title(), "%b%Y")
+        return dt.strftime("%b%Y")
+    except Exception:
+        return None
+
+
+def cleaned_csv_col(col_name: str) -> str:
+    """
+    For columns that store CSV-like ids e.g. "[111, 113]"
+    Makes it "111,113" so FIND_IN_SET works.
+    """
+    return f"REPLACE(REPLACE(REPLACE({col_name}, '[', ''), ']', ''), ' ', '')"
+
+
 @tracker_bp.route("/view_daily", methods=["POST"])
 def view_daily_trackers():
     data = request.get_json() or {}
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
+
+    # ✅ temp_qc date column is now "date" (TEXT storing 'YYYY-MM-DD')
+    QC_DATE_COL = "date"
 
     try:
         params = []
@@ -733,14 +761,14 @@ def view_daily_trackers():
             params.append(data["task_id"])
 
         if data.get("date_from"):
-            date_from = data["date_from"]
+            date_from = str(data["date_from"])
             if len(date_from) == 10:
                 date_from += " 00:00:00"
             where += " AND CAST(twt.date_time AS DATETIME) >= %s"
             params.append(date_from)
 
         if data.get("date_to"):
-            date_to = data["date_to"]
+            date_to = str(data["date_to"])
             if len(date_to) == 10:
                 date_to += " 23:59:59"
             where += " AND CAST(twt.date_time AS DATETIME) <= %s"
@@ -777,12 +805,13 @@ def view_daily_trackers():
                 params.extend([manager_id] * 7)
 
         # -------- Daily aggregation + cumulative + daily required
+        # ❌ total_production_day removed
+        # ✅ qc_score + assigned_hours added from temp_qc (user_id + date)
         query = f"""
             WITH daily AS (
                 SELECT
                     twt.user_id,
                     DATE(CAST(twt.date_time AS DATETIME)) AS work_date,
-                    SUM(COALESCE(twt.production, 0)) AS total_production_day,
                     SUM(COALESCE(twt.production, 0) / NULLIF(twt.tenure_target, 0)) AS total_billable_hours_day,
                     COUNT(*) AS trackers_count_day
                 FROM task_work_tracker twt
@@ -805,12 +834,15 @@ def view_daily_trackers():
                 u.user_name,
                 dwc.work_date,
 
-                dwc.total_production_day,
                 ROUND(dwc.total_billable_hours_day, 4) AS total_billable_hours_day,
                 dwc.trackers_count_day,
 
                 ROUND(dwc.cumulative_billable_hours_till_day, 4)
                     AS cumulative_billable_hours_till_day,
+
+                -- ✅ QC data for that day (temp_qc.date is TEXT 'YYYY-MM-DD')
+                tq.qc_score AS qc_score,
+                tq.assigned_hours AS assigned_hours,
 
                 umt.user_monthly_tracker_id,
                 COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0) AS monthly_target,
@@ -854,10 +886,16 @@ def view_daily_trackers():
                 END AS daily_required_hours
             FROM daily_with_cum dwc
             JOIN tfs_user u ON u.user_id = dwc.user_id
+
+            LEFT JOIN temp_qc tq
+              ON tq.user_id = dwc.user_id
+             AND tq.{QC_DATE_COL} = DATE_FORMAT(dwc.work_date, '%Y-%m-%d')
+
             LEFT JOIN user_monthly_tracker umt
               ON umt.user_id = dwc.user_id
              AND umt.is_active = 1
              AND umt.month_year = %s
+
             ORDER BY dwc.work_date DESC, u.user_name ASC
         """
 

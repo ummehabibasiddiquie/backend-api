@@ -2,6 +2,7 @@
 from flask import Blueprint, request
 from utils.response import api_response
 from config import get_db_connection, UPLOAD_SUBDIRS, BASE_UPLOAD_URL, UPLOAD_FOLDER
+from utils.security import decrypt_password, encrypt_password, safe_decrypt_password
 from utils.validators import validate_request
 from utils.json_utils import to_db_json
 from datetime import datetime
@@ -183,7 +184,7 @@ def list_users():
             LEFT JOIN user_role r ON r.role_id = u.role_id
             LEFT JOIN user_designation d ON d.designation_id = u.designation_id
             LEFT JOIN team t ON u.team_id = t.team_id
-            WHERE u.is_delete = 1
+            WHERE u.is_active = 1 and u.is_delete = 1
         """
 
         params = []
@@ -236,6 +237,13 @@ def list_users():
 
         # ✅ absolute url
         _attach_profile_picture_url(users)
+        
+        # Decrypt passwords for frontend display
+        # Handle both encrypted and plain text passwords
+        for user in users:
+            if user.get("user_password"):
+                # Use safe_decrypt_password to handle both formats
+                user["user_password"] = safe_decrypt_password(user["user_password"])
 
         return api_response(200, "Users fetched successfully", users)
 
@@ -290,6 +298,11 @@ def update_user():
             "qa_id": to_db_json(form.get("qa_id"), allow_single=True),
         }
 
+        # Encrypt password if provided
+        user_password = form.get("user_password")
+        if user_password:
+            user_fields["user_password"] = encrypt_password(user_password)
+            
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         user_update_cols = []
         user_update_vals = []

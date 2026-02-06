@@ -312,7 +312,7 @@ def list_user_monthly_targets():
     data = request.get_json(silent=True) or {}
 
     logged_in_user_id = data.get("logged_in_user_id")
-    month_year = (data.get("month_year") or "").strip()  # OPTIONAL (MONYYYY)
+    month_year = (data.get("month_year") or "").strip()  # OPTIONAL (MonYYYY)
     filter_user_id = data.get("user_id")  # OPTIONAL
     filter_team_id = data.get("team_id")  # OPTIONAL
 
@@ -323,16 +323,14 @@ def list_user_monthly_targets():
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # If month_year is not provided, do not filter by month (show all data)
-
         ctx = get_role_context(cursor, int(logged_in_user_id))
-        my_role_name = ctx["user_role_name"]
-        agent_role_id = ctx["agent_role_id"]
+        my_role_name = (ctx.get("user_role_name") or "").lower()
+        agent_role_id = ctx.get("agent_role_id")
 
         if not agent_role_id:
             return api_response(500, "Agent role not found in user_role table", None)
 
-        # Base WHERE: only agent rows
+        # ---------------- Base WHERE: only agent rows ----------------
         user_where = """
             WHERE u.is_active=1
               AND u.is_delete=1
@@ -343,11 +341,12 @@ def list_user_monthly_targets():
         if filter_user_id:
             user_where += " AND u.user_id=%s"
             user_params.append(int(filter_user_id))
+
         if filter_team_id:
             user_where += " AND u.team_id=%s"
             user_params.append(int(filter_team_id))
 
-        if my_role_name == "admin" or my_role_name == "super admin":
+        if my_role_name in ("admin", "super admin"):
             pass
         elif my_role_name == "agent":
             user_where += " AND u.user_id=%s"
@@ -366,7 +365,10 @@ def list_user_monthly_targets():
             """
             user_params.extend([mid, mid, mid, mid, mid, mid])
 
-        # Joins: if month_year is provided, filter by month; else, join without month filter
+        # ---------------- Joins: month_year optional ----------------
+        # temp_qc.date is TEXT 'YYYY-MM-DD'
+        QC_YEAR_MONTH = "DATE_FORMAT(STR_TO_DATE(tq.date, '%Y-%m-%d'), '%Y%m')"
+
         if month_year:
             umt_join = """
                 INNER JOIN user_monthly_tracker umt
@@ -380,18 +382,43 @@ def list_user_monthly_targets():
                  AND twt.is_active=1
                  AND {TRACKER_YEAR_MONTH} = {month_year_to_yyyymm_sql('%s')}
             """
+            # ✅ avg_qc_score = SUM(qc_score) / COUNT(days having qc_score)
+            qc_join = f"""
+                LEFT JOIN (
+                    SELECT
+                        tq.user_id,
+                        ROUND(SUM(tq.qc_score) / NULLIF(COUNT(DISTINCT tq.date), 0), 2) AS avg_qc_score,
+                        COUNT(DISTINCT tq.date) AS qc_days_count
+                    FROM temp_qc tq
+                    WHERE tq.qc_score IS NOT NULL
+                      AND {QC_YEAR_MONTH} = {month_year_to_yyyymm_sql('%s')}
+                    GROUP BY tq.user_id
+                ) qc ON qc.user_id = u.user_id
+            """
         else:
             umt_join = """
                 LEFT JOIN user_monthly_tracker umt
                   ON umt.user_id = u.user_id
                  AND umt.is_active=1
             """
-            twt_join = f"""
+            twt_join = """
                 LEFT JOIN task_work_tracker twt
                   ON twt.user_id = u.user_id
                  AND twt.is_active=1
             """
+            qc_join = """
+                LEFT JOIN (
+                    SELECT
+                        tq.user_id,
+                        ROUND(SUM(tq.qc_score) / NULLIF(COUNT(DISTINCT tq.date), 0), 2) AS avg_qc_score,
+                        COUNT(DISTINCT tq.date) AS qc_days_count
+                    FROM temp_qc tq
+                    WHERE tq.qc_score IS NOT NULL
+                    GROUP BY tq.user_id
+                ) qc ON qc.user_id = u.user_id
+            """
 
+        # ---------------- Main query ----------------
         query = f"""
             SELECT
                 u.user_id,
@@ -405,9 +432,15 @@ def list_user_monthly_targets():
                     COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0)
                     + COALESCE(umt.extra_assigned_hours, 0)
                 ) AS monthly_total_target,
+
                 COALESCE(SUM(twt.billable_hours), 0) AS total_billable_hours,
                 COALESCE(SUM(twt.production), 0) AS total_production,
                 COUNT(twt.tracker_id) AS tracker_rows,
+
+                -- ✅ QC monthly avg and qc-days count
+                qc.avg_qc_score AS avg_qc_score,
+                COALESCE(qc.qc_days_count, 0) AS qc_days_count,
+
                 GREATEST(
                     (
                         COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0)
@@ -419,23 +452,36 @@ def list_user_monthly_targets():
             LEFT JOIN team t ON u.team_id = t.team_id
             {umt_join}
             {twt_join}
+            {qc_join}
             {user_where}
-            GROUP BY u.user_id, umt.user_monthly_tracker_id
+            GROUP BY
+                u.user_id,
+                u.user_name,
+                t.team_name,
+                umt.user_monthly_tracker_id,
+                umt.month_year,
+                monthly_target,
+                extra_assigned_hours,
+                qc.avg_qc_score,
+                qc.qc_days_count
             ORDER BY u.user_name ASC
         """
-        # Params order: if month_year is provided, pass it; else, only user_where params
+
+        # Params order:
+        # if month_year: umt_join(%s), twt_join(%s), qc_join(%s), then user_where params
         if month_year:
-            final_params = [month_year, month_year]
+            final_params = [month_year, month_year, month_year]
         else:
             final_params = []
         final_params.extend(user_params)
+
         cursor.execute(query, tuple(final_params))
         rows = cursor.fetchall()
         return api_response(200, "User monthly targets fetched successfully", rows)
 
     except Exception as e:
         return api_response(500, f"List failed: {str(e)}", None)
+
     finally:
         cursor.close()
         conn.close()
-
