@@ -237,7 +237,7 @@ def list_users():
             params.append(int(user_id))        # JSON_CONTAINS
             params.append(str(int(user_id)))   # FIND_IN_SET
 
-        elif role == "manager":
+        elif role in ["manager", "project manager"]:
             query += """
                 AND (
                     (
