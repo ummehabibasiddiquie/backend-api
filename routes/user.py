@@ -184,7 +184,7 @@ def list_users():
             LEFT JOIN user_role r ON r.role_id = u.role_id
             LEFT JOIN user_designation d ON d.designation_id = u.designation_id
             LEFT JOIN team t ON u.team_id = t.team_id
-            WHERE u.is_active = 1 AND u.is_delete = 1
+            WHERE u.is_delete = 1
         """
 
         params: list = []
