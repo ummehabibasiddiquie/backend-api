@@ -701,7 +701,7 @@ def cleaned_csv_col(col_name: str) -> str:
     return f"REPLACE(REPLACE(REPLACE({col_name}, '[', ''), ']', ''), ' ', '')"
 
 
-@tracker_bp.route("/view_daily", methods=["POST"])
+@tracker_bp.route("/python/view_daily", methods=["POST"])
 def view_daily_trackers():
     data = request.get_json() or {}
 
