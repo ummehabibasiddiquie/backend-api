@@ -184,25 +184,43 @@ def list_users():
             LEFT JOIN user_role r ON r.role_id = u.role_id
             LEFT JOIN user_designation d ON d.designation_id = u.designation_id
             LEFT JOIN team t ON u.team_id = t.team_id
-            WHERE u.is_active = 1 and u.is_delete = 1
+            WHERE u.is_active = 1 AND u.is_delete = 1
         """
 
         params = []
 
-        # Role-based filtering
+        # ✅ Role-based filtering (MariaDB-safe + handles empty string JSON)
+        # NOTE: JSON columns stored like "[111,113]" (numbers). So we match using JSON_ARRAY(<id>).
         if role == "qa":
-            query += " AND JSON_CONTAINS(COALESCE(u.qa_id, '[]'), %s)"
-            params.append(str(user_id))
+            query += """
+                AND JSON_CONTAINS(
+                    COALESCE(NULLIF(TRIM(u.qa_id), ''), '[]'),
+                    JSON_ARRAY(CAST(%s AS UNSIGNED))
+                )
+            """
+            params.append(int(user_id))
+
         elif role == "assistant manager":
-            query += " AND JSON_CONTAINS(COALESCE(u.asst_manager_id, '[]'), %s)"
-            params.append(str(user_id))
+            query += """
+                AND JSON_CONTAINS(
+                    COALESCE(NULLIF(TRIM(u.asst_manager_id), ''), '[]'),
+                    JSON_ARRAY(CAST(%s AS UNSIGNED))
+                )
+            """
+            params.append(int(user_id))
+
         elif role == "manager":
-            query += " AND JSON_CONTAINS(COALESCE(u.project_manager_id, '[]'), %s)"
-            params.append(str(user_id))
+            query += """
+                AND JSON_CONTAINS(
+                    COALESCE(NULLIF(TRIM(u.project_manager_id), ''), '[]'),
+                    JSON_ARRAY(CAST(%s AS UNSIGNED))
+                )
+            """
+            params.append(int(user_id))
 
         query += " ORDER BY u.user_id DESC"
 
-        cursor.execute(query, params)
+        cursor.execute(query, tuple(params))
         users = cursor.fetchall()
 
         # Resolve project/asst/qa names
@@ -219,7 +237,7 @@ def list_users():
                 f"SELECT user_id, user_name FROM tfs_user WHERE user_id IN ({placeholders})",
                 tuple(all_ref_ids)
             )
-            rows = cursor.fetchall()
+            rows = cursor.fetchall() or []
             id_to_user = {int(r["user_id"]): r["user_name"] for r in rows}
 
         for u in users:
@@ -237,12 +255,10 @@ def list_users():
 
         # ✅ absolute url
         _attach_profile_picture_url(users)
-        
-        # Decrypt passwords for frontend display
-        # Handle both encrypted and plain text passwords
+
+        # ✅ decrypt password for frontend display (handles encrypted/plain)
         for user in users:
             if user.get("user_password"):
-                # Use safe_decrypt_password to handle both formats
                 user["user_password"] = safe_decrypt_password(user["user_password"])
 
         return api_response(200, "Users fetched successfully", users)
@@ -259,6 +275,7 @@ def list_users():
             conn.close()
         except Exception:
             pass
+
 
 
 # ------------------------
