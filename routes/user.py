@@ -194,70 +194,40 @@ def list_users():
         if role == "qa":
             query += """
                 AND (
-                    (
-                        JSON_VALID(COALESCE(NULLIF(TRIM(u.qa_id), ''), '[]')) = 1
-                        AND JSON_CONTAINS(
-                            COALESCE(NULLIF(TRIM(u.qa_id), ''), '[]'),
-                            JSON_ARRAY(CAST(%s AS UNSIGNED))
-                        )
-                    )
-                    OR
-                    (
-                        JSON_VALID(COALESCE(NULLIF(TRIM(u.qa_id), ''), '[]')) = 0
-                        AND FIND_IN_SET(
-                            %s,
-                            REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(u.qa_id,''), '[',''), ']',''), '"',''), ' ', '')
-                        ) > 0
-                    )
+                    TRIM(COALESCE(u.qa_id, '')) = %s
+                    OR FIND_IN_SET(
+                        %s,
+                        REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(u.qa_id,''), '[',''), ']',''), '"',''), ' ', '')
+                    ) > 0
                 )
             """
-            params.append(int(user_id))        # JSON_CONTAINS
+            params.append(str(int(user_id)))   # exact match
             params.append(str(int(user_id)))   # FIND_IN_SET
 
         elif role == "assistant manager":
             query += """
                 AND (
-                    (
-                        JSON_VALID(COALESCE(NULLIF(TRIM(u.asst_manager_id), ''), '[]')) = 1
-                        AND JSON_CONTAINS(
-                            COALESCE(NULLIF(TRIM(u.asst_manager_id), ''), '[]'),
-                            JSON_ARRAY(CAST(%s AS UNSIGNED))
-                        )
-                    )
-                    OR
-                    (
-                        JSON_VALID(COALESCE(NULLIF(TRIM(u.asst_manager_id), ''), '[]')) = 0
-                        AND FIND_IN_SET(
-                            %s,
-                            REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(u.asst_manager_id,''), '[',''), ']',''), '"',''), ' ', '')
-                        ) > 0
-                    )
+                    TRIM(COALESCE(u.asst_manager_id, '')) = %s
+                    OR FIND_IN_SET(
+                        %s,
+                        REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(u.asst_manager_id,''), '[',''), ']',''), '"',''), ' ', '')
+                    ) > 0
                 )
             """
-            params.append(int(user_id))        # JSON_CONTAINS
+            params.append(str(int(user_id)))   # exact match
             params.append(str(int(user_id)))   # FIND_IN_SET
 
         elif role in ["manager", "project manager"]:
             query += """
                 AND (
-                    (
-                        JSON_VALID(COALESCE(NULLIF(TRIM(u.project_manager_id), ''), '[]')) = 1
-                        AND JSON_CONTAINS(
-                            COALESCE(NULLIF(TRIM(u.project_manager_id), ''), '[]'),
-                            JSON_ARRAY(CAST(%s AS UNSIGNED))
-                        )
-                    )
-                    OR
-                    (
-                        JSON_VALID(COALESCE(NULLIF(TRIM(u.project_manager_id), ''), '[]')) = 0
-                        AND FIND_IN_SET(
-                            %s,
-                            REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(u.project_manager_id,''), '[',''), ']',''), '"',''), ' ', '')
-                        ) > 0
-                    )
+                    TRIM(COALESCE(u.project_manager_id, '')) = %s
+                    OR FIND_IN_SET(
+                        %s,
+                        REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(u.project_manager_id,''), '[',''), ']',''), '"',''), ' ', '')
+                    ) > 0
                 )
             """
-            params.append(int(user_id))        # JSON_CONTAINS
+            params.append(str(int(user_id)))   # exact match
             params.append(str(int(user_id)))   # FIND_IN_SET
 
         query += " ORDER BY u.user_id DESC"
