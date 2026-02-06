@@ -394,19 +394,75 @@ def list_projects():
             if row:
                 role_name = (row["role_name"] or "").strip().lower()
 
-        cursor.execute("""
+        # ✅ Role-based project filtering
+        base_query = """
             SELECT project_id, project_name, project_code, project_description,
                    project_team_id, project_manager_id, asst_project_manager_id, project_qa_id,
                    project_pprt, created_date, updated_date
             FROM project
             WHERE is_active=1
-            ORDER BY project_id DESC
-        """)
+        """
+        params = []
+
+        if role_name in ["admin", "super admin"] or not logged_in_user_id:
+            # Admin sees all projects
+            pass
+        elif role_name in ["manager", "project manager"]:
+            # Project manager sees projects they manage
+            base_query += """
+                AND (
+                    TRIM(COALESCE(project_manager_id, '')) = %s
+                    OR FIND_IN_SET(
+                        %s,
+                        REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(project_manager_id,''), '[',''), ']',''), '"',''), ' ', '')
+                    ) > 0
+                )
+            """
+            params.extend([str(logged_in_user_id), str(logged_in_user_id)])
+        elif role_name == "assistant manager":
+            # Assistant manager sees projects where they are asst_project_manager
+            base_query += """
+                AND (
+                    TRIM(COALESCE(asst_project_manager_id, '')) = %s
+                    OR FIND_IN_SET(
+                        %s,
+                        REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(asst_project_manager_id,''), '[',''), ']',''), '"',''), ' ', '')
+                    ) > 0
+                )
+            """
+            params.extend([str(logged_in_user_id), str(logged_in_user_id)])
+        elif role_name == "qa":
+            # QA sees projects where they are project_qa
+            base_query += """
+                AND (
+                    TRIM(COALESCE(project_qa_id, '')) = %s
+                    OR FIND_IN_SET(
+                        %s,
+                        REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(project_qa_id,''), '[',''), ']',''), '"',''), ' ', '')
+                    ) > 0
+                )
+            """
+            params.extend([str(logged_in_user_id), str(logged_in_user_id)])
+        elif role_name == "agent":
+            # Agent sees projects where they are in project_team
+            base_query += """
+                AND (
+                    TRIM(COALESCE(project_team_id, '')) = %s
+                    OR FIND_IN_SET(
+                        %s,
+                        REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(project_team_id,''), '[',''), ']',''), '"',''), ' ', '')
+                    ) > 0
+                )
+            """
+            params.extend([str(logged_in_user_id), str(logged_in_user_id)])
+
+        base_query += " ORDER BY project_id DESC"
+
+        cursor.execute(base_query, tuple(params))
         projects = cursor.fetchall()
 
         result = []
         for proj in projects:
-            # ✅ If you want: re-add your role filtering here (same logic you had earlier)
 
             files = parse_db_files(proj.get("project_pprt"))
             project_files = files_to_urls(files)  # ✅ absolute array links
