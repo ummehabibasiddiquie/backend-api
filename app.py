@@ -2,7 +2,7 @@ from flask import Flask
 from routes.auth import auth_bp
 from routes.user import user_bp
 from routes.project import project_bp
-from routes.project_category import project_category_bp
+# from routes.project_category import project_category_bp
 from routes.dropdown import dropdown_bp
 from routes.task import task_bp
 from routes.tracker import tracker_bp
