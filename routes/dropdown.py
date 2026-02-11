@@ -102,44 +102,6 @@ def get():
 
             return api_response(200, "Dropdown data fetched successfully", result)
 
-        # -------------------- PROJECT CATEGORIES -------------------- #
-        if dropdown_type == "project categories":
-            query = """
-                SELECT project_category_id, project_category_name AS label
-                FROM project_category
-                WHERE is_active = 1
-                ORDER BY project_category_name
-            """
-            params = []
-
-            cursor.execute(query, params)
-            result = cursor.fetchall()
-
-            for item in result:
-                if item.get("label"):
-                    item["label"] = item["label"].title()
-
-            return api_response(200, "Dropdown data fetched successfully", result)
-
-        # -------------------- AFD -------------------- #
-        if dropdown_type == "afd":
-            query = """
-                SELECT afd_id, afd_name AS label
-                FROM afd
-                WHERE is_active = 1
-                ORDER BY afd_name
-            """
-            params = []
-
-            cursor.execute(query, params)
-            result = cursor.fetchall()
-
-            for item in result:
-                if item.get("label"):
-                    item["label"] = item["label"].title()
-
-            return api_response(200, "Dropdown data fetched successfully", result)
-
         # -------------------- ROLE-BASED USER LIST -------------------- #
         if dropdown_type in ROLE_BASED_USER_DROPDOWNS:
             project_id = data.get("project_id")
