@@ -30,7 +30,8 @@ def add_task():
     task_file_base64 = data.get("task_file")
     task_file = None
     is_active=1
-    important_columns = ["Email"] #static for testing purpose
+    # important_columns = ["Email"] #static for testing purpose
+    important_columns = data.get("important_columns") #static for testing purpose
     
     if task_file_base64 :
         task_file = save_base64_file(task_file_base64, UPLOAD_SUBDIRS['TASK_FILES'])
@@ -82,7 +83,7 @@ def add_task():
 
 
 # ---------------- UPDATE TASK ---------------- #
-@task_bp.route("/update", methods=["PUT"])
+@task_bp.route("/update", methods=["POST"])
 def update_task():
     data = request.get_json()
     if not data or "task_id" not in data:
