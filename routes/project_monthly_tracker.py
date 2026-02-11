@@ -23,53 +23,92 @@ def project_exists(cursor, project_id: int) -> bool:
 
 
 # -----------------------------
-# ADD
+# ADD (supports single or bulk insert)
 # -----------------------------
 @project_monthly_tracker_bp.route("/add", methods=["POST"])
 def add_project_monthly_tracker():
-    data = request.get_json() or {}
+    """
+    Accepts either:
+      - Single object: {"project_id": 1, "month_year": "Feb2026", "monthly_target": "100"}
+      - Array of objects: [{"project_id": 1, ...}, {"project_id": 2, ...}]
+    """
+    raw_data = request.get_json(silent=True)
 
-    err = validate_required(data, ["project_id", "month_year", "monthly_target"])
-    if err:
-        return api_response(400, err)
+    # Normalize to list
+    if isinstance(raw_data, list):
+        records = raw_data
+    elif isinstance(raw_data, dict):
+        records = [raw_data]
+    else:
+        return api_response(400, "Invalid JSON payload")
 
-    project_id = int(data["project_id"])
-    month_year = str(data["month_year"]).strip()
-    monthly_target = str(data["monthly_target"]).strip()
-    created_date = str(data.get("created_date") or now_str())
+    if not records:
+        return api_response(400, "No records provided")
+
+    # Validate all records first
+    required_fields = ["project_id", "month_year", "monthly_target"]
+    for idx, data in enumerate(records):
+        err = validate_required(data, required_fields)
+        if err:
+            return api_response(400, f"Record {idx + 1}: {err}")
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
     try:
-        if not project_exists(cursor, project_id):
-            return api_response(404, "Project not found or inactive")
+        inserted_ids = []
+        skipped = []
 
-        # prevent duplicate active rows for same project+month
-        cursor.execute(
-            """
-            SELECT project_monthly_tracker_id
-            FROM project_monthly_tracker
-            WHERE project_id=%s AND month_year=%s AND is_active=1
-            """,
-            (project_id, month_year)
-        )
-        if cursor.fetchone():
-            return api_response(409, "Monthly target for this project and month already exists")
+        for idx, data in enumerate(records):
+            project_id = int(data["project_id"])
+            month_year = str(data["month_year"]).strip()
+            monthly_target = str(data["monthly_target"]).strip()
+            created_date = str(data.get("created_date") or now_str())
 
-        cursor.execute(
-            """
-            INSERT INTO project_monthly_tracker
-                (project_id, month_year, monthly_target, created_date, is_active)
-            VALUES (%s, %s, %s, %s, 1)
-            """,
-            (project_id, month_year, monthly_target, created_date)
-        )
+            # Check project exists
+            if not project_exists(cursor, project_id):
+                skipped.append({"index": idx + 1, "project_id": project_id, "reason": "Project not found or inactive"})
+                continue
+
+            # Check for duplicate (project + month)
+            cursor.execute(
+                """
+                SELECT project_monthly_tracker_id
+                FROM project_monthly_tracker
+                WHERE project_id=%s AND month_year=%s AND is_active=1
+                """,
+                (project_id, month_year)
+            )
+            if cursor.fetchone():
+                skipped.append({"index": idx + 1, "project_id": project_id, "month_year": month_year, "reason": "Already exists"})
+                continue
+
+            cursor.execute(
+                """
+                INSERT INTO project_monthly_tracker
+                    (project_id, month_year, monthly_target, created_date, is_active)
+                VALUES (%s, %s, %s, %s, 1)
+                """,
+                (project_id, month_year, monthly_target, created_date)
+            )
+            inserted_ids.append(cursor.lastrowid)
+
         conn.commit()
 
-        return api_response(201, "Project monthly target added successfully", {
-            "project_monthly_tracker_id": cursor.lastrowid
-        })
+        # Response
+        if not inserted_ids and skipped:
+            return api_response(409, "No records inserted", {"skipped": skipped})
+
+        return api_response(
+            201,
+            f"{len(inserted_ids)} record(s) added successfully",
+            {
+                "inserted_count": len(inserted_ids),
+                "project_monthly_tracker_ids": inserted_ids,
+                "skipped_count": len(skipped),
+                "skipped": skipped if skipped else None,
+            },
+        )
 
     except Exception as e:
         conn.rollback()
