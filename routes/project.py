@@ -155,7 +155,7 @@ def create_project():
     asst_project_manager_id = _get_form_json_list(form, "asst_project_manager_id")
     project_team_id = _get_form_json_list(form, "project_team_id")
     project_qa_id = _get_form_json_list(form, "project_qa_id")
-    project_category_id = form.get("project_category_id")
+    # project_category_id = form.get("project_category_id")
 
     uploaded_files = _get_uploaded_files()
 
@@ -187,12 +187,12 @@ def create_project():
                 project_team_id,
                 project_qa_id,
                 project_pprt,
-                project_category_id,
+                # project_category_id,
                 created_date,
                 updated_date,
                 is_active
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1)
             """,
             (
                 project_name,
@@ -203,7 +203,7 @@ def create_project():
                 json.dumps(project_team_id),
                 json.dumps(project_qa_id),
                 json.dumps(saved_files),   # ✅ store array*
-                project_category_id,
+                # project_category_id,
                 now_str,
                 now_str,
             ),
@@ -252,7 +252,7 @@ def update_project():
         update_values = {}
 
         # normal fields
-        for key in ["project_name", "project_code", "project_description", "project_manager_id", "project_category_id"]:
+        for key in ["project_name", "project_code", "project_description", "project_manager_id"]:
             if form.get(key) is not None:
                 v = form.get(key)
                 if key in ["project_name", "project_code"] and v is not None:
@@ -479,7 +479,7 @@ def list_projects():
                 "project_team_id": json.loads(proj.get("project_team_id") or "[]"),
                 "asst_project_manager_id": json.loads(proj.get("asst_project_manager_id") or "[]"),
                 "project_qa_id": json.loads(proj.get("project_qa_id") or "[]"),
-                "project_category": proj["project_category"],
+                # "project_category": proj["project_category"],
                 "project_files": project_files,
                 "created_date": proj["created_date"],
                 "updated_date": proj["updated_date"],
