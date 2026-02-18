@@ -1,3 +1,4 @@
+
 from flask import Blueprint, request
 from utils.response import api_response
 from config import get_db_connection, UPLOAD_FOLDER, UPLOAD_SUBDIRS
@@ -30,8 +31,8 @@ def add_task():
     task_file_base64 = data.get("task_file")
     task_file = None
     is_active=1
-    # important_columns = ["Email"] #static for testing purpose
-    important_columns = data.get("important_columns") #static for testing purpose
+    important_columns = ["Email"] #static for testing purpose
+    # important_columns = data.get("important_columns") #static for testing purpose
     
     if task_file_base64 :
         task_file = save_base64_file(task_file_base64, UPLOAD_SUBDIRS['TASK_FILES'])
