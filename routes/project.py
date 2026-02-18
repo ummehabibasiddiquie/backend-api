@@ -401,7 +401,7 @@ def list_projects():
         base_query = """
             SELECT project_id, project_name, project_code, project_description,
                    project_team_id, project_manager_id, asst_project_manager_id, project_qa_id,
-                   project_pprt, created_date, updated_date
+                   project_pprt, project_category_id, created_date, updated_date
             FROM project
             WHERE is_active=1
         """
@@ -479,7 +479,7 @@ def list_projects():
                 "project_team_id": json.loads(proj.get("project_team_id") or "[]"),
                 "asst_project_manager_id": json.loads(proj.get("asst_project_manager_id") or "[]"),
                 "project_qa_id": json.loads(proj.get("project_qa_id") or "[]"),
-                "project_category": proj["project_category"],
+                "project_category_id": proj.get("project_category_id"),
                 "project_files": project_files,
                 "created_date": proj["created_date"],
                 "updated_date": proj["updated_date"],
