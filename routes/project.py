@@ -480,6 +480,7 @@ def list_projects():
                 "asst_project_manager_id": json.loads(proj.get("asst_project_manager_id") or "[]"),
                 "project_qa_id": json.loads(proj.get("project_qa_id") or "[]"),
                 "project_category_id": proj.get("project_category_id"),
+                "project_category": proj["project_category"],
                 "project_files": project_files,
                 "created_date": proj["created_date"],
                 "updated_date": proj["updated_date"],
