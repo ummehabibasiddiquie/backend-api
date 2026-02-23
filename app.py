@@ -57,6 +57,10 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 def home():
     return "Flask Auth API is running!"
 
+@app.route("/health")
+def health():
+    return "OK", 200
+
 @app.route("/uploads/<path:filename>")
 def serve_uploads(filename):
     from config import UPLOAD_FOLDER
