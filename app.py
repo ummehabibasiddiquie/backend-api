@@ -13,7 +13,6 @@ from routes.user_monthly_tracker import user_monthly_tracker_bp
 from routes.api_log_list import api_log_list_bp
 from routes.password_reset import password_reset_bp
 from routes.qc import qc_bp
-from routes.email_tracking import email_tracking_bp
 # from routes.qc_afd import qc_afd_bp
 
 
@@ -40,7 +39,6 @@ app.register_blueprint(user_monthly_tracker_bp,url_prefix=f"/user_monthly_tracke
 app.register_blueprint(api_log_list_bp, url_prefix="/api_log_list")
 app.register_blueprint(password_reset_bp, url_prefix="/password_reset")
 app.register_blueprint(qc_bp, url_prefix="/qc")
-app.register_blueprint(email_tracking_bp, url_prefix="/email_tracking")
 # app.register_blueprint(qc_afd_bp, url_prefix="/qc_afd")
 
 # print("\n==== REGISTERED ROUTES ====")
