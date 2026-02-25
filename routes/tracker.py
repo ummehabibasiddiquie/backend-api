@@ -3,7 +3,7 @@ from config import get_db_connection, BASE_UPLOAD_URL, UPLOAD_SUBDIRS, UPLOAD_FO
 from utils.response import api_response
 from utils.file_utils import save_base64_file  # kept (not used now in update)
 from utils.api_log_utils import log_api_call
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import os
 
@@ -19,7 +19,7 @@ UPLOAD_URL_PREFIX = "/uploads"
 def calculate_targets(base_target, user_tenure):
     user_tenure = float(user_tenure)
     base_target = float(base_target)
-    actual_target = base_target * 1
+    actual_target = round(base_target * 1, 2)
     tenure_target = round(base_target * user_tenure, 2)
     return actual_target, tenure_target
 
@@ -151,6 +151,7 @@ def safe_remove_tracker_file(filename: str) -> bool:
 # ------------------------
 @tracker_bp.route("/add", methods=["POST"])
 def add_tracker():
+    now_str = None
     form = request.form
 
     required_fields = ["project_id", "task_id", "user_id", "production", "tenure_target"]
@@ -163,6 +164,9 @@ def add_tracker():
     user_id = int(form["user_id"])
     production = float(form["production"])
     tenure_target = float(form["tenure_target"])
+    shift = form.get("shift", "DAY").upper()
+    now_str = form.get("date")
+    print(now_str)
 
     billable_hours = production / tenure_target if tenure_target else 0
 
@@ -175,8 +179,12 @@ def add_tracker():
         task_row = cursor.fetchone()
         if not task_row:
             return api_response(404, "Task not found")
+        
+        if shift not in ["DAY", "NIGHT"]:
+            return api_response(400, "Shift must be DAY or NIGHT")
 
         actual_target = task_row["task_target"]
+        actual_billable_hours = production / actual_target if actual_target else 0
         task_name = task_row.get("task_name") or "Task"
 
         # --- get project_code
@@ -200,18 +208,30 @@ def add_tracker():
             except ValueError as e:
                 return api_response(400, str(e))
 
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if now_str is None:
+            print("Received date:", now_str)
+            now = datetime.now()
+            # If NIGHT shift and time is between 00:00–06:00
+            if shift == "NIGHT" and now.hour < 6:
+                adjusted_datetime = now - timedelta(days=1)
+            else:
+                adjusted_datetime = now
+                
+            now_str = adjusted_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        
+        tracker_note = form.get("tracker_note")  # optional, can be null
 
         cursor.execute(
             """
             INSERT INTO task_work_tracker
-            (project_id, task_id, user_id, production, actual_target, tenure_target, billable_hours,
-             tracker_file, is_active, date_time, updated_date)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            (project_id, task_id, user_id, production, actual_target, tenure_target, billable_hours, actual_billable_hours,
+             tracker_file, tracker_note, shift, is_active, date_time, updated_date)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 project_id, task_id, user_id, production, actual_target, tenure_target,
-                billable_hours, tracker_file, 1, now, now
+                billable_hours, actual_billable_hours, tracker_file, tracker_note, shift, 1, now_str, now_str
             ),
         )
         conn.commit()
@@ -269,9 +289,14 @@ def update_tracker():
 
         # compute targets (keep your existing calculate_targets)
         actual_target, tenure_target = calculate_targets(base_target, user_row["user_tenure"])
+        actual_billable_hours = production / actual_target if actual_target else 0
 
         tracker_file = old_file
         uploaded = request.files.get("tracker_file")
+        
+        shift = form.get("shift", tracker.get("shift", "DAY")).upper()
+        if shift not in ["DAY", "NIGHT"]:
+            return api_response(400, "Shift must be DAY or NIGHT")
 
         # ✅ Replace file only if new file provided
         if uploaded and uploaded.filename:
@@ -310,7 +335,16 @@ def update_tracker():
 
             tracker_file = new_file
 
-        updated_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # updated_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now()
+        if shift == "NIGHT" and now.hour < 6:
+            adjusted_datetime = now - timedelta(days=1)
+        else:
+            adjusted_datetime = now
+
+        updated_date = adjusted_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        
+        tracker_note = form.get("tracker_note", tracker.get("tracker_note"))  # optional, keep existing if not provided
 
         cursor.execute(
             """
@@ -319,7 +353,10 @@ def update_tracker():
                 actual_target=%s,
                 tenure_target=%s,
                 billable_hours=(%s / NULLIF(%s, 0)),
+                actual_billable_hours=%s,
                 tracker_file=%s,
+                tracker_note=%s,
+                shift=%s,
                 updated_date=%s
             WHERE tracker_id=%s
             """,
@@ -329,7 +366,10 @@ def update_tracker():
                 tenure_target,
                 production,
                 tenure_target,
+                actual_billable_hours,
                 tracker_file,
+                tracker_note,
+                shift,
                 updated_date,
                 tracker_id,
             ),
@@ -512,6 +552,10 @@ def view_trackers():
         if data.get("task_id"):
             query += " AND twt.task_id=%s"
             params.append(data["task_id"])
+            
+        if data.get("shift"):
+            query += " AND twt.shift = %s"
+            params.append(data["shift"].upper())
 
         if data.get("date_from"):
             date_from = data["date_from"]
@@ -708,7 +752,7 @@ def view_daily_trackers():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # ✅ temp_qc date column is now "date" (TEXT storing 'YYYY-MM-DD')
+    # temp_qc date column is TEXT storing 'YYYY-MM-DD'
     QC_DATE_COL = "date"
 
     try:
@@ -718,13 +762,13 @@ def view_daily_trackers():
         if not logged_in_user_id:
             return api_response(400, "logged_in_user_id is required")
 
-        # -------- Month (case-insensitive, same behavior as view)
+        # -------- Month (case-insensitive, same behavior as /view)
         month_year = normalize_month_year(data.get("month_year"))
         if not month_year:
             cursor.execute("SELECT DATE_FORMAT(CURDATE(), '%b%Y') AS m")
             month_year = normalize_month_year((cursor.fetchone() or {}).get("m") or "")
 
-        # -------- Role check (DO NOT depend on is_delete)
+        # -------- Role check
         cursor.execute(
             """
             SELECT LOWER(TRIM(r.role_name)) AS role_name
@@ -737,9 +781,10 @@ def view_daily_trackers():
         )
         role_name = ((cursor.fetchone() or {}).get("role_name") or "").lower()
 
+        # -------- WHERE (same filters as /view)
         where = "WHERE twt.is_active != 0"
 
-        # -------- Month filter
+        # Month filter
         try:
             dt = datetime.strptime(month_year, "%b%Y")
             where += " AND YEAR(CAST(twt.date_time AS DATETIME))=%s AND MONTH(CAST(twt.date_time AS DATETIME))=%s"
@@ -747,11 +792,12 @@ def view_daily_trackers():
         except Exception:
             pass
 
-        # -------- Same filters as /view
+        # Team filter
         if data.get("team_id"):
             where += " AND u.team_id=%s"
             params.append(data["team_id"])
 
+        # Project/task filters
         if data.get("project_id"):
             where += " AND twt.project_id=%s"
             params.append(data["project_id"])
@@ -759,7 +805,12 @@ def view_daily_trackers():
         if data.get("task_id"):
             where += " AND twt.task_id=%s"
             params.append(data["task_id"])
+            
+        if data.get("shift"):
+            where += " AND twt.shift = %s"
+            params.append(data["shift"].upper())
 
+        # Date range filters
         if data.get("date_from"):
             date_from = str(data["date_from"])
             if len(date_from) == 10:
@@ -778,7 +829,7 @@ def view_daily_trackers():
             where += " AND twt.is_active=%s"
             params.append(data["is_active"])
 
-        # -------- User filter OR restriction (same logic as view)
+        # User filter OR restriction (manager logic)
         if data.get("user_id"):
             where += " AND twt.user_id=%s"
             params.append(data["user_id"])
@@ -805,19 +856,19 @@ def view_daily_trackers():
                 params.extend([manager_id] * 7)
 
         # -------- Daily aggregation + cumulative + daily required
-        # ❌ total_production_day removed
-        # ✅ qc_score + assigned_hours added from temp_qc (user_id + date)
+        # ✅ team_id + team_name added in daily rows
         query = f"""
             WITH daily AS (
                 SELECT
                     twt.user_id,
+                    twt.shift,
                     DATE(CAST(twt.date_time AS DATETIME)) AS work_date,
                     SUM(COALESCE(twt.production, 0) / NULLIF(twt.tenure_target, 0)) AS total_billable_hours_day,
                     COUNT(*) AS trackers_count_day
                 FROM task_work_tracker twt
                 LEFT JOIN tfs_user u ON u.user_id = twt.user_id
                 {where}
-                GROUP BY twt.user_id, DATE(CAST(twt.date_time AS DATETIME))
+                GROUP BY twt.user_id, twt.shift, DATE(CAST(twt.date_time AS DATETIME))
             ),
             daily_with_cum AS (
                 SELECT
@@ -831,7 +882,13 @@ def view_daily_trackers():
             )
             SELECT
                 dwc.user_id,
+                dwc.shift,
                 u.user_name,
+
+                -- ✅ team info in response
+                t.team_id,
+                t.team_name,
+
                 dwc.work_date,
 
                 ROUND(dwc.total_billable_hours_day, 4) AS total_billable_hours_day,
@@ -840,7 +897,7 @@ def view_daily_trackers():
                 ROUND(dwc.cumulative_billable_hours_till_day, 4)
                     AS cumulative_billable_hours_till_day,
 
-                -- ✅ QC data for that day (temp_qc.date is TEXT 'YYYY-MM-DD')
+                -- QC data for that day (temp_qc.date is TEXT 'YYYY-MM-DD')
                 tq.qc_score AS qc_score,
                 tq.assigned_hours AS assigned_hours,
 
@@ -886,6 +943,7 @@ def view_daily_trackers():
                 END AS daily_required_hours
             FROM daily_with_cum dwc
             JOIN tfs_user u ON u.user_id = dwc.user_id
+            LEFT JOIN team t ON t.team_id = u.team_id
 
             LEFT JOIN temp_qc tq
               ON tq.user_id = dwc.user_id
@@ -903,6 +961,127 @@ def view_daily_trackers():
         cursor.execute(query, tuple(final_params))
         rows = cursor.fetchall()
 
+        # -------- month_summary (NOW INCLUDED) + ✅ team_id/team_name + ✅ team filter applied
+        # Build summary only for users returned in daily rows
+        user_ids = sorted({r.get("user_id") for r in rows if r.get("user_id") is not None})
+        month_summary = []
+
+        if user_ids:
+            in_ph = ",".join(["%s"] * len(user_ids))
+            team_id = data.get("team_id")  # may be None
+
+            summary_query = f"""
+                SELECT
+                    u.user_id,
+                    u.user_name,
+
+                    -- ✅ team info
+                    t.team_id,
+                    t.team_name,
+
+                    m.mon AS month_year,
+                    umt.user_monthly_tracker_id,
+                    COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0) AS monthly_target,
+                    COALESCE(umt.extra_assigned_hours, 0) AS extra_assigned_hours,
+                    (
+                      COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0)
+                      + COALESCE(umt.extra_assigned_hours, 0)
+                    ) AS monthly_total_target,
+                    COALESCE((
+                      SELECT SUM(twt3.production / NULLIF(twt3.tenure_target, 0))
+                      FROM task_work_tracker twt3
+                      WHERE twt3.user_id = u.user_id
+                        AND twt3.is_active = 1
+                        AND (YEAR(CAST(twt3.date_time AS DATETIME))*100 + MONTH(CAST(twt3.date_time AS DATETIME))) = m.yyyymm
+                    ), 0) AS total_billable_hours_month,
+                    CASE
+                      WHEN umt.user_monthly_tracker_id IS NULL THEN NULL
+                      ELSE GREATEST(
+                             COALESCE(CAST(umt.working_days AS SIGNED), 0)
+                             - COALESCE((
+                                 SELECT COUNT(DISTINCT DATE(CAST(twt2.date_time AS DATETIME)))
+                                 FROM task_work_tracker twt2
+                                 WHERE twt2.user_id = u.user_id
+                                   AND twt2.is_active = 1
+                                   AND (YEAR(CAST(twt2.date_time AS DATETIME))*100 + MONTH(CAST(twt2.date_time AS DATETIME))) = m.yyyymm
+                                   AND DATE(CAST(twt2.date_time AS DATETIME)) <= m.cutoff
+                               ), 0),
+                             0
+                           )
+                    END AS pending_days,
+                    CASE
+                      WHEN umt.user_monthly_tracker_id IS NULL THEN NULL
+                      WHEN GREATEST(
+                             COALESCE(CAST(umt.working_days AS SIGNED), 0)
+                             - COALESCE((
+                                 SELECT COUNT(DISTINCT DATE(CAST(twt2.date_time AS DATETIME)))
+                                 FROM task_work_tracker twt2
+                                 WHERE twt2.user_id = u.user_id
+                                   AND twt2.is_active = 1
+                                   AND (YEAR(CAST(twt2.date_time AS DATETIME))*100 + MONTH(CAST(twt2.date_time AS DATETIME))) = m.yyyymm
+                                   AND DATE(CAST(twt2.date_time AS DATETIME)) <= m.cutoff
+                               ), 0),
+                             0
+                           ) = 0 THEN NULL
+                      ELSE
+                        (
+                          (
+                            COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0)
+                            + COALESCE(umt.extra_assigned_hours, 0)
+                          )
+                          - COALESCE((
+                              SELECT SUM(twt3.production / NULLIF(twt3.tenure_target, 0))
+                              FROM task_work_tracker twt3
+                              WHERE twt3.user_id = u.user_id
+                                AND twt3.is_active = 1
+                                AND (YEAR(CAST(twt3.date_time AS DATETIME))*100 + MONTH(CAST(twt3.date_time AS DATETIME))) = m.yyyymm
+                            ), 0)
+                        )
+                        / NULLIF(
+                            GREATEST(
+                              COALESCE(CAST(umt.working_days AS SIGNED), 0)
+                              - COALESCE((
+                                  SELECT COUNT(DISTINCT DATE(CAST(twt2.date_time AS DATETIME)))
+                                  FROM task_work_tracker twt2
+                                  WHERE twt2.user_id = u.user_id
+                                    AND twt2.is_active = 1
+                                    AND (YEAR(CAST(twt2.date_time AS DATETIME))*100 + MONTH(CAST(twt2.date_time AS DATETIME))) = m.yyyymm
+                                    AND DATE(CAST(twt2.date_time AS DATETIME)) <= m.cutoff
+                                ), 0),
+                              0
+                            ),
+                            0
+                          )
+                    END AS daily_required_hours
+                FROM tfs_user u
+                LEFT JOIN team t ON t.team_id = u.team_id
+                CROSS JOIN (
+                    SELECT
+                      %s AS mon,
+                      CAST(DATE_FORMAT(STR_TO_DATE(CONCAT('01-', %s), '%d-%b%Y'), '%Y%m') AS UNSIGNED) AS yyyymm,
+                      CASE
+                        WHEN (YEAR(CURDATE())*100 + MONTH(CURDATE())) =
+                             CAST(DATE_FORMAT(STR_TO_DATE(CONCAT('01-', %s), '%d-%b%Y'), '%Y%m') AS UNSIGNED)
+                        THEN CURDATE()
+                        WHEN (YEAR(CURDATE())*100 + MONTH(CURDATE())) >
+                             CAST(DATE_FORMAT(STR_TO_DATE(CONCAT('01-', %s), '%d-%b%Y'), '%Y%m') AS UNSIGNED)
+                        THEN LAST_DAY(STR_TO_DATE(CONCAT('01-', %s), '%d-%b%Y'))
+                        ELSE DATE_SUB(STR_TO_DATE(CONCAT('01-', %s), '%d-%b%Y'), INTERVAL 1 DAY)
+                      END AS cutoff
+                ) m
+                LEFT JOIN user_monthly_tracker umt
+                  ON umt.user_id = u.user_id
+                 AND umt.is_active = 1
+                 AND umt.month_year = m.mon
+                WHERE u.user_id IN ({in_ph})
+                  -- ✅ team filter applied to summary too
+                  AND (%s IS NULL OR u.team_id = %s)
+            """
+
+            summary_params = [month_year] * 6 + user_ids + [team_id, team_id]
+            cursor.execute(summary_query, tuple(summary_params))
+            month_summary = cursor.fetchall()
+
         # -------- Response KEYS SAME AS /view
         return api_response(
             200,
@@ -910,8 +1089,8 @@ def view_daily_trackers():
             {
                 "count": len(rows),
                 "month_year": month_year,
-                "trackers": rows,      # 🔑 SAME KEY AS VIEW
-                "month_summary": []    # 🔑 KEPT FOR FRONTEND COMPATIBILITY
+                "trackers": rows,        # daily aggregated rows
+                "month_summary": month_summary  # ✅ now included + team info + team filter
             },
         )
 

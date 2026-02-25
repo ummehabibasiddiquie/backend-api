@@ -71,68 +71,125 @@ def get_role_context(cursor, user_id: int) -> dict:
 # ---------------------------
 # ADD
 # ---------------------------
+# ---------------------------
+# ADD (Single OR Bulk)
+# ---------------------------
 @user_monthly_tracker_bp.route("/add", methods=["POST"])
 def add_user_monthly_target():
-    data = request.get_json(silent=True) or {}
+    """
+    Accepts either:
+      - Single object:
+          {"user_id": 1, "month_year": "JAN2026", "monthly_target": "160", "working_days": "22", "extra_assigned_hours": 0}
+      - Array of objects:
+          [{"user_id": 1, ...}, {"user_id": 2, ...}]
+    """
+    raw = request.get_json(silent=True)
 
-    if not data.get("user_id"):
-        return api_response(400, "user_id is required")
-    if not data.get("month_year"):
-        return api_response(400, "month_year is required (MONYYYY e.g. JAN2026)")
-    if data.get("monthly_target") in [None, ""]:
-        return api_response(400, "monthly_target is required")
-    if data.get("working_days") in [None, ""]:
-        return api_response(400, "working_days is required")
+    # Normalize to list
+    if isinstance(raw, list):
+        records = raw
+    elif isinstance(raw, dict):
+        records = [raw]
+    else:
+        return api_response(400, "Invalid JSON payload")
 
-    user_id = int(data["user_id"])
-    month_year = str(data["month_year"]).strip()  # keep as-is (MONYYYY)
-    monthly_target = str(data["monthly_target"]).strip()  # TEXT in DB
-    extra_assigned_hours = int(data.get("extra_assigned_hours") or 0)
-    working_days = str(data["working_days"]).strip()  # TEXT in DB
-    created_date = str(data.get("created_date") or now_str())
+    if not records:
+        return api_response(400, "No records provided")
+
+    required_fields = ["user_id", "month_year", "monthly_target", "working_days"]
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # Validate user exists
-        cursor.execute(
-            """
-            SELECT user_id
-            FROM tfs_user
-            WHERE user_id=%s AND is_active=1 AND is_delete=1
-            """,
-            (user_id,),
-        )
-        if not cursor.fetchone():
-            return api_response(404, "User not found or inactive")
+        inserted_ids = []
+        skipped = []
 
-        # Prevent duplicate active (user + month)
-        cursor.execute(
-            """
-            SELECT user_monthly_tracker_id
-            FROM user_monthly_tracker
-            WHERE user_id=%s AND month_year=%s AND is_active=1
-            """,
-            (user_id, month_year),
-        )
-        if cursor.fetchone():
-            return api_response(409, "Monthly target already exists for this user and month")
+        for idx, data in enumerate(records):
+            # ---- required validation per record
+            missing = None
+            for f in required_fields:
+                if data.get(f) in [None, ""]:
+                    missing = f
+                    break
+            if missing:
+                skipped.append({"index": idx + 1, "reason": f"{missing} is required"})
+                continue
 
-        cursor.execute(
-            """
-            INSERT INTO user_monthly_tracker
-                (user_id, month_year, monthly_target, extra_assigned_hours, working_days, is_active, created_date)
-            VALUES (%s, %s, %s, %s, %s, 1, %s)
-            """,
-            (user_id, month_year, monthly_target, extra_assigned_hours, working_days, created_date),
-        )
+            user_id = int(data["user_id"])
+            month_year = str(data["month_year"]).strip()  # MONYYYY like JAN2026
+            monthly_target = str(data["monthly_target"]).strip()  # TEXT in DB
+            extra_assigned_hours = int(data.get("extra_assigned_hours") or 0)
+            working_days = str(data["working_days"]).strip()  # TEXT in DB
+            created_date = str(data.get("created_date") or now_str())
+
+            # ---- Validate user exists
+            cursor.execute(
+                """
+                SELECT user_id
+                FROM tfs_user
+                WHERE user_id=%s AND is_active=1 AND is_delete=1
+                """,
+                (user_id,),
+            )
+            if not cursor.fetchone():
+                skipped.append(
+                    {"index": idx + 1, "user_id": user_id, "reason": "User not found or inactive"}
+                )
+                continue
+
+            # ---- Prevent duplicate active (user + month)
+            cursor.execute(
+                """
+                SELECT user_monthly_tracker_id
+                FROM user_monthly_tracker
+                WHERE user_id=%s AND month_year=%s AND is_active=1
+                """,
+                (user_id, month_year),
+            )
+            if cursor.fetchone():
+                skipped.append(
+                    {
+                        "index": idx + 1,
+                        "user_id": user_id,
+                        "month_year": month_year,
+                        "reason": "Monthly target already exists for this user and month",
+                    }
+                )
+                continue
+
+            cursor.execute(
+                """
+                INSERT INTO user_monthly_tracker
+                    (user_id, month_year, monthly_target, extra_assigned_hours, working_days, is_active, created_date)
+                VALUES (%s, %s, %s, %s, %s, 1, %s)
+                """,
+                (
+                    user_id,
+                    month_year,
+                    monthly_target,
+                    extra_assigned_hours,
+                    working_days,
+                    created_date,
+                ),
+            )
+            inserted_ids.append(cursor.lastrowid)
+
         conn.commit()
+
+        # If nothing inserted but there are skipped => conflict-ish
+        if not inserted_ids and skipped:
+            return api_response(409, "No records inserted", {"skipped": skipped})
 
         return api_response(
             201,
-            "User monthly target added successfully",
-            {"user_monthly_tracker_id": cursor.lastrowid},
+            f"{len(inserted_ids)} record(s) added successfully",
+            {
+                "inserted_count": len(inserted_ids),
+                "user_monthly_tracker_ids": inserted_ids,
+                "skipped_count": len(skipped),
+                "skipped": skipped if skipped else None,
+            },
         )
 
     except Exception as e:
@@ -172,7 +229,7 @@ def update_user_monthly_target():
 
     if "extra_assigned_hours" in data and data["extra_assigned_hours"] not in [None, ""]:
         updates.append("extra_assigned_hours=%s")
-        params.append(int(data["extra_assigned_hours"]))
+        params.append(int(data["extra_assigned_hours"])) 
 
     if "working_days" in data and data["working_days"] not in [None, ""]:
         updates.append("working_days=%s")
@@ -190,7 +247,7 @@ def update_user_monthly_target():
             """
             SELECT user_id, month_year
             FROM user_monthly_tracker
-            WHERE user_monthly_tracker_id=%s AND is_active=1
+            WHERE user_monthly_tracker_id=%s
             """,
             (umt_id,),
         )
@@ -232,7 +289,7 @@ def update_user_monthly_target():
                 """
                 SELECT user_monthly_tracker_id
                 FROM user_monthly_tracker
-                WHERE user_id=%s AND month_year=%s AND is_active=1
+                WHERE user_id=%s AND month_year=%s 
                   AND user_monthly_tracker_id<>%s
                 """,
                 (final_user_id, final_month_year, umt_id),
@@ -277,8 +334,7 @@ def delete_user_monthly_target():
     try:
         cursor.execute(
             """
-            UPDATE user_monthly_tracker
-            SET is_active=0
+            delete from user_monthly_tracker
             WHERE user_monthly_tracker_id=%s AND is_active=1
             """,
             (umt_id,),
@@ -355,15 +411,13 @@ def list_user_monthly_targets():
             mid = str(logged_in_user_id)
             user_where += """
                 AND (
-                    u.project_manager_id = %s
-                    OR u.asst_manager_id = %s
-                    OR u.qa_id = %s
-                    OR FIND_IN_SET(%s, REPLACE(u.project_manager_id, ' ', '')) > 0
-                    OR FIND_IN_SET(%s, REPLACE(u.asst_manager_id, ' ', '')) > 0
-                    OR FIND_IN_SET(%s, REPLACE(u.qa_id, ' ', '')) > 0
+                    JSON_CONTAINS(u.project_manager_id, %s)
+                    OR JSON_CONTAINS(u.asst_manager_id, %s)
+                    OR JSON_CONTAINS(u.qa_id, %s)
                 )
             """
-            user_params.extend([mid, mid, mid, mid, mid, mid])
+
+            user_params.extend([str(mid), str(mid), str(mid)])
 
         # ---------------- Joins: month_year optional ----------------
         # temp_qc.date is TEXT 'YYYY-MM-DD'
@@ -426,6 +480,7 @@ def list_user_monthly_targets():
                 t.team_name,
                 umt.user_monthly_tracker_id,
                 umt.month_year,
+                umt.working_days,
                 COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0) AS monthly_target,
                 COALESCE(umt.extra_assigned_hours, 0) AS extra_assigned_hours,
                 (
@@ -460,6 +515,7 @@ def list_user_monthly_targets():
                 t.team_name,
                 umt.user_monthly_tracker_id,
                 umt.month_year,
+                umt.working_days,
                 monthly_target,
                 extra_assigned_hours,
                 qc.avg_qc_score,
