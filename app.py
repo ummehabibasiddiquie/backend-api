@@ -2,7 +2,6 @@ from flask import Flask
 from routes.auth import auth_bp
 from routes.user import user_bp
 from routes.project import project_bp
-from routes.project_category import project_category_bp
 from routes.dropdown import dropdown_bp
 from routes.task import task_bp
 from routes.tracker import tracker_bp
@@ -13,7 +12,6 @@ from routes.user_monthly_tracker import user_monthly_tracker_bp
 from routes.api_log_list import api_log_list_bp
 from routes.password_reset import password_reset_bp
 from routes.qc import qc_bp
-from routes.qc_afd import qc_afd_bp
 from scheduler import start_scheduler
 
 
@@ -30,7 +28,6 @@ BASE_URL =  ""
 app.register_blueprint(auth_bp, url_prefix=f"/auth")
 app.register_blueprint(user_bp, url_prefix=f"/user")
 app.register_blueprint(project_bp, url_prefix=f"/project")
-app.register_blueprint(project_category_bp, url_prefix=f"/project_category")
 app.register_blueprint(dropdown_bp, url_prefix=f"/dropdown")
 app.register_blueprint(task_bp, url_prefix=f"/task")
 app.register_blueprint(tracker_bp, url_prefix=f"/tracker")
@@ -41,7 +38,6 @@ app.register_blueprint(user_monthly_tracker_bp,url_prefix=f"/user_monthly_tracke
 app.register_blueprint(api_log_list_bp, url_prefix="/api_log_list")
 app.register_blueprint(password_reset_bp, url_prefix="/password_reset")
 app.register_blueprint(qc_bp, url_prefix="/qc")
-app.register_blueprint(qc_afd_bp, url_prefix="/qc_afd")
 
 # print("\n==== REGISTERED ROUTES ====")
 # for r in app.url_map.iter_rules():
