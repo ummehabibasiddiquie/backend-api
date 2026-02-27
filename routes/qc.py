@@ -9,6 +9,71 @@ QC_DATE_COL = "date"  # change if your column name is different
 def response(status, message, data=None, code=200):
     return jsonify({"status": status, "message": message, "data": data}), code
 
+# ---------------------------
+# DAILY ASSIGNED HOURS (NEW)
+# ---------------------------
+@qc_bp.route("/assign-daily-hours", methods=["POST"])
+def assign_daily_hours():
+    """
+    Scheduled job endpoint.
+    Assigns 9 hours to all active agents for the current day.
+    """
+    now = datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
+    now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(dictionary=True)
+
+        # 1. Get all active agent user_ids
+        cur.execute("""
+            SELECT u.user_id
+            FROM tfs_user u
+            JOIN user_role ur ON u.role_id = ur.role_id
+            WHERE ur.role_name = 'agent' AND u.is_active = 1 AND u.is_delete = 1
+        """)
+        agent_rows = cur.fetchall()
+        agent_ids = [row['user_id'] for row in agent_rows]
+
+        if not agent_ids:
+            return response(True, "No active agents found to assign hours.", None, 200)
+
+        # 2. Bulk insert/update
+        # Use ON DUPLICATE KEY UPDATE to be idempotent
+        sql = f"""
+            INSERT INTO temp_qc (user_id, assigned_hours, {QC_DATE_COL}, updated_date)
+            VALUES (%s, 9, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                assigned_hours = VALUES(assigned_hours),
+                updated_date = VALUES(updated_date)
+        """
+        
+        # Prepare data for executemany
+        data_to_insert = [(agent_id, today_str, now_str) for agent_id in agent_ids]
+        
+        cur.executemany(sql, data_to_insert)
+        
+        conn.commit()
+
+        return response(True, f"Successfully assigned 9 hours to {cur.rowcount} agents for {today_str}.", None, 200)
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return response(False, f"An error occurred: {str(e)}", None, 500)
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+# ---------------------------
+# UPSERT (EXISTING)
+# ---------------------------
 @qc_bp.route("/temp-qc", methods=["POST"])
 def upsert_temp_qc():
     data = request.get_json(silent=True) or {}

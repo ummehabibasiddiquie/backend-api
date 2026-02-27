@@ -6,3 +6,4 @@ gunicorn==21.2.0
 bcrypt==5.0.0
 requests==2.32.5
 cryptography==41.0.7
+APScheduler==3.10.4

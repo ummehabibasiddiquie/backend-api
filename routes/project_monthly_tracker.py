@@ -270,25 +270,62 @@ def delete_project_monthly_tracker():
 def list_project_monthly_tracker():
     data = request.get_json() or {}
 
-    params = []
-    where = "WHERE pmt.is_active=1"
+    # -----------------------
+    # 1) Filters for pmt list
+    # -----------------------
+    pmt_params = []
+    where_pmt = "WHERE pmt.is_active=1"
 
-    # ✅ now list can also return one record if id is passed
     if data.get("project_monthly_tracker_id"):
-        where += " AND pmt.project_monthly_tracker_id = %s"
-        params.append(int(data["project_monthly_tracker_id"]))
+        where_pmt += " AND pmt.project_monthly_tracker_id=%s"
+        pmt_params.append(int(data["project_monthly_tracker_id"]))
 
     if data.get("project_id"):
-        where += " AND pmt.project_id = %s"
-        params.append(int(data["project_id"]))
+        where_pmt += " AND pmt.project_id=%s"
+        pmt_params.append(int(data["project_id"]))
 
     if data.get("month_year"):
-        where += " AND pmt.month_year = %s"
-        params.append(str(data["month_year"]).strip())
+        where_pmt += " AND pmt.month_year=%s"
+        pmt_params.append(str(data["month_year"]).strip())
 
     if data.get("project_name"):
-        where += " AND p.project_name LIKE %s"
-        params.append(f"%{data['project_name']}%")
+        where_pmt += " AND p.project_name LIKE %s"
+        pmt_params.append(f"%{data['project_name']}%")
+
+    # -----------------------------
+    # 2) Filters for achieved hours
+    # -----------------------------
+    twt_params = []
+    where_twt = "WHERE twt.is_active=1"
+
+    # keep achieved aligned with list filters
+    if data.get("project_id"):
+        where_twt += " AND twt.project_id=%s"
+        twt_params.append(int(data["project_id"]))
+
+    if data.get("month_year"):
+        # month_year match using DATE_FORMAT -> "Feb2026"
+        where_twt += " AND DATE_FORMAT(twt.date_time, '%b%Y')=%s"
+        twt_params.append(str(data["month_year"]).strip())
+
+    # optional filters (use if your UI sends them)
+    if data.get("task_id"):
+        where_twt += " AND twt.task_id=%s"
+        twt_params.append(int(data["task_id"]))
+
+    if data.get("user_id"):
+        where_twt += " AND twt.user_id=%s"
+        twt_params.append(int(data["user_id"]))
+
+    # date range filters
+    # send: "date_from": "2026-02-01", "date_to": "2026-02-29"
+    if data.get("date_from"):
+        where_twt += " AND twt.date_time >= %s"
+        twt_params.append(str(data["date_from"]).strip() + " 00:00:00")
+
+    if data.get("date_to"):
+        where_twt += " AND twt.date_time <= %s"
+        twt_params.append(str(data["date_to"]).strip() + " 23:59:59")
 
     limit = int(data.get("limit") or 200)
     offset = int(data.get("offset") or 0)
@@ -304,24 +341,52 @@ def list_project_monthly_tracker():
                 p.project_name,
                 pmt.month_year,
                 pmt.monthly_target,
+
+                COALESCE(twt_sum.achieved_hours, 0) AS achieved_hours,
+                (
+                    COALESCE(CAST(pmt.monthly_target AS DECIMAL(12,2)), 0)
+                    - COALESCE(twt_sum.achieved_hours, 0)
+                ) AS pending_hours,
+
                 pmt.created_date,
                 pmt.is_active
             FROM project_monthly_tracker pmt
             LEFT JOIN project p ON p.project_id = pmt.project_id
-            {where}
+
+            LEFT JOIN (
+                SELECT
+                    twt.project_id,
+                    DATE_FORMAT(twt.date_time, '%b%Y') AS month_year,
+                    SUM(
+                        CASE
+                            WHEN twt.actual_billable_hours REGEXP '^[0-9]+(\\.[0-9]+)?$'
+                            THEN CAST(twt.actual_billable_hours AS DECIMAL(12,2))
+                            ELSE 0
+                        END
+                    ) AS achieved_hours
+                FROM task_work_tracker twt
+                {where_twt}
+                GROUP BY twt.project_id, DATE_FORMAT(twt.date_time, '%b%Y')
+            ) twt_sum
+                ON twt_sum.project_id = pmt.project_id
+               AND twt_sum.month_year = pmt.month_year
+
+            {where_pmt}
             ORDER BY pmt.project_monthly_tracker_id DESC
             LIMIT %s OFFSET %s
         """
-        cursor.execute(query, tuple(params + [limit, offset]))
+
+        # IMPORTANT: twt params come first because the subquery appears first in SQL
+        cursor.execute(query, tuple(twt_params + pmt_params + [limit, offset]))
         rows = cursor.fetchall()
 
         count_query = f"""
             SELECT COUNT(*) AS total
             FROM project_monthly_tracker pmt
             LEFT JOIN project p ON p.project_id = pmt.project_id
-            {where}
+            {where_pmt}
         """
-        cursor.execute(count_query, tuple(params))
+        cursor.execute(count_query, tuple(pmt_params))
         total = (cursor.fetchone() or {}).get("total", 0)
 
         return api_response(200, "Records fetched successfully", {
