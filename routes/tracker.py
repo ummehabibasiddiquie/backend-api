@@ -342,7 +342,8 @@ def update_tracker():
         else:
             adjusted_datetime = now
 
-        updated_date = adjusted_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        updated_date = now.strftime("%Y-%m-%d %H:%M:%S")
+        date_time = adjusted_datetime.strftime("%Y-%m-%d %H:%M:%S")
         
         tracker_note = form.get("tracker_note", tracker.get("tracker_note"))  # optional, keep existing if not provided
 
@@ -357,7 +358,8 @@ def update_tracker():
                 tracker_file=%s,
                 tracker_note=%s,
                 shift=%s,
-                updated_date=%s
+                updated_date=%s,
+                date_time=%s
             WHERE tracker_id=%s
             """,
             (
@@ -371,6 +373,7 @@ def update_tracker():
                 tracker_note,
                 shift,
                 updated_date,
+                date_time,
                 tracker_id,
             ),
         )
