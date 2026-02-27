@@ -280,6 +280,8 @@ def update_tracker():
         # update numeric fields (optional)
         production = float(form.get("production", tracker["production"]))
         base_target = float(form.get("base_target", tracker["actual_target"]))
+        date_time = form.get("date_time", tracker["date_time"])
+        print(date_time)
 
         # tenure + user_name
         cursor.execute("SELECT user_tenure, user_name FROM tfs_user WHERE user_id=%s", (tracker["user_id"],))
@@ -337,13 +339,13 @@ def update_tracker():
 
         # updated_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         now = datetime.now()
-        if shift == "NIGHT" and now.hour < 6:
-            adjusted_datetime = now - timedelta(days=1)
-        else:
-            adjusted_datetime = now
+        # if shift == "NIGHT" and now.hour < 6:
+        #     adjusted_datetime = now - timedelta(days=1)
+        # else:
+        #     adjusted_datetime = now
 
         updated_date = now.strftime("%Y-%m-%d %H:%M:%S")
-        date_time = adjusted_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        # date_time = adjusted_datetime.strftime("%Y-%m-%d %H:%M:%S")
         
         tracker_note = form.get("tracker_note", tracker.get("tracker_note"))  # optional, keep existing if not provided
 
