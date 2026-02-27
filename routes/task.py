@@ -84,7 +84,7 @@ def add_task():
 
 
 # ---------------- UPDATE TASK ---------------- #
-@task_bp.route("/update", methods=["POST"])
+@task_bp.route("/update", methods=["POST","PUT"])
 def update_task():
     data = request.get_json()
     if not data or "task_id" not in data:
