@@ -204,7 +204,7 @@ def add_task():
 
 
 # ---------------- UPDATE TASK (multipart/form-data) ---------------- #
-@task_bp.route("/update", methods=["POST"])
+@task_bp.route("/update", methods=["POST","PUT"])
 def update_task():
     form = request.form
     task_id = form.get("task_id")

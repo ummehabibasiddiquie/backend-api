@@ -256,7 +256,7 @@ def add_tracker():
 # ------------------------
 # UPDATE TRACKER (multipart + optional file replace + custom filename)
 # ------------------------
-@tracker_bp.route("/update", methods=["POST"])
+@tracker_bp.route("/update", methods=["POST","PUT"])
 def update_tracker():
     form = request.form
     tracker_id = form.get("tracker_id")
