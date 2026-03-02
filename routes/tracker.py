@@ -487,11 +487,34 @@ def view_trackers():
             return api_response(400, "logged_in_user_id is required")
 
         # month_year default current month
-        month_year = normalize_month_year(data.get("month_year"))
+        # month_year = normalize_month_year(data.get("month_year"))
+        # if not month_year:
+        #     cursor.execute("SELECT DATE_FORMAT(CURDATE(), '%b%Y') AS m")
+        #     month_year = normalize_month_year((cursor.fetchone() or {}).get("m") or "")
+
+        # ---------- Smart Month Detection ----------
+        month_year = None
+
+        # 1️⃣ If date filter exists → derive month from date_to OR date_from
+        if data.get("date_from") or data.get("date_to"):
+            try:
+                ref_date = data.get("date_to") or data.get("date_from")
+                ref_date = str(ref_date)[:10]  # ensure YYYY-MM-DD
+                dt_obj = datetime.strptime(ref_date, "%Y-%m-%d")
+                month_year = dt_obj.strftime("%b%Y")
+            except Exception:
+                month_year = None
+
+        # 2️⃣ Else use explicit month_year
+        if not month_year:
+            month_year = normalize_month_year(data.get("month_year"))
+
+        # 3️⃣ Else fallback to current month
         if not month_year:
             cursor.execute("SELECT DATE_FORMAT(CURDATE(), '%b%Y') AS m")
             month_year = normalize_month_year((cursor.fetchone() or {}).get("m") or "")
-
+        
+        
         ctx = get_role_context(cursor, int(logged_in_user_id))
         role_name = ctx["user_role_name"]
 
@@ -768,11 +791,34 @@ def view_daily_trackers():
             return api_response(400, "logged_in_user_id is required")
 
         # -------- Month (case-insensitive, same behavior as /view)
-        month_year = normalize_month_year(data.get("month_year"))
+        # month_year = normalize_month_year(data.get("month_year"))
+        # if not month_year:
+        #     cursor.execute("SELECT DATE_FORMAT(CURDATE(), '%b%Y') AS m")
+        #     month_year = normalize_month_year((cursor.fetchone() or {}).get("m") or "")
+
+        # ---------- Smart Month Detection ----------
+        month_year = None
+
+        # 1️⃣ If date filter exists → derive month from date_to OR date_from
+        if data.get("date_from") or data.get("date_to"):
+            try:
+                ref_date = data.get("date_to") or data.get("date_from")
+                ref_date = str(ref_date)[:10]  # ensure YYYY-MM-DD
+                dt_obj = datetime.strptime(ref_date, "%Y-%m-%d")
+                month_year = dt_obj.strftime("%b%Y")
+            except Exception:
+                month_year = None
+
+        # 2️⃣ Else use explicit month_year
+        if not month_year:
+            month_year = normalize_month_year(data.get("month_year"))
+
+        # 3️⃣ Else fallback to current month
         if not month_year:
             cursor.execute("SELECT DATE_FORMAT(CURDATE(), '%b%Y') AS m")
             month_year = normalize_month_year((cursor.fetchone() or {}).get("m") or "")
-
+        
+        
         # -------- Role check
         cursor.execute(
             """
