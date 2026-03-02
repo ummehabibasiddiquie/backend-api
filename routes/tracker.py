@@ -210,14 +210,14 @@ def add_tracker():
 
         # now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if now_str is None:
-            print("Received date:", now_str)
+            print("Received date:", now_str) 
             now = datetime.now()
             # If NIGHT shift and time is between 00:00–06:00
             if shift == "NIGHT" and now.hour < 6:
                 adjusted_datetime = now - timedelta(days=1)
             else:
                 adjusted_datetime = now
-                
+                            
             now_str = adjusted_datetime.strftime("%Y-%m-%d %H:%M:%S")
         
         tracker_note = form.get("tracker_note")  # optional, can be null
