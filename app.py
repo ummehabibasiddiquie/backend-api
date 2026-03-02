@@ -12,7 +12,7 @@ from routes.user_monthly_tracker import user_monthly_tracker_bp
 from routes.api_log_list import api_log_list_bp
 from routes.password_reset import password_reset_bp
 from routes.qc import qc_bp
-from scheduler import start_scheduler
+# from scheduler import start_scheduler
 
 
 from flask_cors import CORS
@@ -65,6 +65,6 @@ def serve_uploads(filename):
 
 if __name__ == "__main__":
     # Start the scheduler
-    start_scheduler()
+    # start_scheduler()
     # app.run(debug=True)
     app.run(host="0.0.0.0", port=5000, debug=True)
