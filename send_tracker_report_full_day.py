@@ -125,8 +125,8 @@ def generate_html(report_date, all_users, tracker_data):
     # ---------------- Production Table ----------------
     full_title = report_date.strftime("%d %B %Y") + " Production Report"
     html += f"""
-    <table width="100%" border="1" cellpadding="8" cellspacing="0"
-       style="border-collapse: collapse; font-family:Arial; margin-bottom:10px;">
+    <table width="75%" border="1" cellpadding="4" cellspacing="0"
+       style="border-collapse: collapse; font-family:Arial; font-size: 12px; margin-bottom:10px;">
         <tr>
             <th colspan="6" style="text-align:center; font-size:18px;">
                 {full_title}

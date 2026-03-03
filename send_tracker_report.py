@@ -82,50 +82,101 @@ def get_daily_tracker_report_till_now():
 # -------------------------------
 # GENERATE HTML
 # -------------------------------
-def generate_html_report(data,start_str, end_str):
-    if not data:
-        return "<p>No records found for today.</p>"
-    
+from collections import defaultdict
+
+def generate_html_report(data, start_str, end_str):
+
     html = f"""
-    <p style="font-family: Arial; font-size: 14px;">
+    <p style="font-family: Arial; font-size: 13px;">
         Dear All,<br><br>
         Tracker report from <b>{start_str}</b> till <b>{end_str}</b>.
     </p>
+    """
+
+    if not data:
+        html += "<p style='font-family:Arial; font-size:13px;'>No records found.</p>"
+        return html
+
+    # Group by agent
+    grouped = defaultdict(list)
+    for row in data:
+        grouped[row["user_name"]].append(row)
+
+    html += """
     <table style="
         border-collapse: collapse;
-        width: 100%;
+        width: 80%;
         font-family: Arial, sans-serif;
-        font-size: 14px;
+        font-size: 12px;
     ">
         <tr style="background-color: #2f6f8f; color: white;">
-            <th style="padding:8px; border:1px solid #ccc;">Created</th>
-            <th style="padding:8px; border:1px solid #ccc;">Name</th>
-            <th style="padding:8px; border:1px solid #ccc;">Project Name</th>
-            <th style="padding:8px; border:1px solid #ccc;">Production</th>
-            <th style="padding:8px; border:1px solid #ccc;">Target</th>
-            <th style="padding:8px; border:1px solid #ccc;">Billable Hours</th>
+            <th style="padding:4px; border:1px solid #ccc;">Created</th>
+            <th style="padding:4px; border:1px solid #ccc;">Name</th>
+            <th style="padding:4px; border:1px solid #ccc;">Project Name</th>
+            <th style="padding:4px; border:1px solid #ccc;">Production</th>
+            <th style="padding:4px; border:1px solid #ccc;">Target</th>
+            <th style="padding:4px; border:1px solid #ccc;">Billable Hours</th>
         </tr>
     """
 
-    for index, row in enumerate(data):
-        dt = row['date_time']
-        formatted_date = f"{dt.day}/{dt.month}/{dt.year} {dt.strftime('%H:%M:%S')}"
+    row_index = 0
 
-        # Alternate row colors
-        row_color = "#e6f2f8" if index % 2 == 0 else "#ffffff"
+    for user, rows in grouped.items():
 
+        total_prod = 0
+        total_target = 0
+        total_bill = 0
+
+        for row in rows:
+
+            dt = row['date_time']
+            formatted_date = dt.strftime("%d/%m/%Y %H:%M")
+
+            row_color = "#e6f2f8" if row_index % 2 == 0 else "#ffffff"
+
+            html += f"""
+            <tr style="background-color: {row_color};">
+                <td style="padding:4px; border:1px solid #ccc;">{formatted_date}</td>
+                <td style="padding:4px; border:1px solid #ccc;">{row['user_name']}</td>
+                <td style="padding:4px; border:1px solid #ccc;">{row['project_name']}</td>
+                <td style="padding:4px; border:1px solid #ccc; text-align:center;">
+                    {float(row['production']):.2f}
+                </td>
+                <td style="padding:4px; border:1px solid #ccc; text-align:center;">
+                    {float(row['tenure_target']):.2f}
+                </td>
+                <td style="padding:4px; border:1px solid #ccc; text-align:center;">
+                    {float(row['billable_hours']):.2f}
+                </td>
+            </tr>
+            """
+
+            total_prod += float(row['production'])
+            total_target += float(row['tenure_target'])
+            total_bill += float(row['billable_hours'])
+
+            row_index += 1
+
+        # Agent Total Row (same theme, slightly darker)
         html += f"""
-        <tr style="background-color: {row_color};">
-            <td style="padding:8px; border:1px solid #ccc;">{formatted_date}</td>
-            <td style="padding:8px; border:1px solid #ccc;">{row['user_name']}</td>
-            <td style="padding:8px; border:1px solid #ccc;">{row['project_name']}</td>
-            <td style="padding:8px; border:1px solid #ccc; text-align:center;">{float(row['production']):.2f}</td>
-            <td style="padding:8px; border:1px solid #ccc; text-align:center;">{float(row['tenure_target']):.2f}</td>
-            <td style="padding:8px; border:1px solid #ccc; text-align:center;">{float(row['billable_hours']):.2f}</td>
+        <tr style="background-color:#cfe7f3; font-weight:bold;">
+            <td colspan="3" style="padding:4px; border:1px solid #ccc;">
+                {user} Total
+            </td>
+            <td style="padding:4px; border:1px solid #ccc; text-align:center;">
+                {total_prod:.2f}
+            </td>
+            <td style="padding:4px; border:1px solid #ccc; text-align:center;">
+                {total_target:.2f}
+            </td>
+            <td style="padding:4px; border:1px solid #ccc; text-align:center;">
+                {total_bill:.2f}
+            </td>
         </tr>
         """
 
     html += "</table>"
+
     return html
 
 # -------------------------------
