@@ -115,37 +115,32 @@ def fetch_data():
         last_qc = {r['user_id']: r for r in cursor.fetchall()}
 
         # Combine
+        # ... inside fetch_data() loop
         for u in all_users:
             uid = u['user_id']
-
-            # Daily worked hours
-            daily_info = tracker_daily.get(uid, {})
-            u['daily_worked_hours'] = daily_info.get('worked_hours', 0)
-            u['worked_hours_date'] = daily_info.get('date')
-
-            # MTD hours
-            mtd_info = tracker_mtd.get(uid, {})
-            u['mtd_hours'] = mtd_info.get('mtd_hours', 0)
-            u['days_worked_mtd'] = mtd_info.get('days_worked', 0)
-
-            # QC and assigned hours
+            worked_hours = tracker_daily.get(uid, 0)
+            mtd_hours = tracker_mtd.get(uid, 0)
             qc_data = last_qc.get(uid, {})
-            u['qc_score'] = qc_data.get('qc_score')
-            u['qc_date'] = qc_data.get('qc_date')
-            u['assigned_hours'] = float(qc_data.get('assigned_hours') or 0)
-            u['assigned_hours_date'] = qc_data.get('qc_date')
 
-            # Monthly calculations
+            u['daily_worked_hours'] = worked_hours
+            u['mtd_hours'] = mtd_hours
+            u['qc_score'] = qc_data.get('qc_score')
+            u['assigned_hours'] = qc_data.get('assigned_hours', 0)
+
+            # Dates for headers
+            u['worked_hours_date'] = report_date.strftime("%Y-%m-%d") if worked_hours else None
+            u['assigned_hours_date'] = report_date.strftime("%Y-%m-%d") if worked_hours else None
+            u['qc_date'] = qc_data.get('date').strftime("%Y-%m-%d") if qc_data.get('date') else None
+
+            # Calculations
             monthly_target = float(u.get('monthly_target') or 0)
             extra_assigned = float(u.get('extra_assigned_hours') or 0)
             working_days = int(u.get('working_days') or 0)
-            mtd_hours = float(u.get('mtd_hours') or 0)
-            days_worked_so_far = int(u.get('days_worked_mtd') or 0)
 
             monthly_goal = monthly_target + extra_assigned
             pending_goal = max(0, monthly_goal - mtd_hours)
 
-            remaining_days = max(0, working_days - days_worked_so_far)
+            remaining_days = max(0, working_days - 1)
             daily_required_hours = (pending_goal / remaining_days) if remaining_days else 0
 
             u['monthly_goal'] = monthly_goal
