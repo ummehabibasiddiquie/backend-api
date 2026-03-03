@@ -103,24 +103,24 @@ def generate_html(report_date, all_users, tracker_data):
     leave_users = [u for u in all_users if u["user_id"] not in users_with_entries]
 
     # ---------------- Leave Table ----------------
-    html += """
-    <table border="1" cellpadding="6" cellspacing="0"
-       style="border-collapse: collapse; font-family:Arial; margin-bottom:30px;">
-        <tr style="background-color:#f7941d; color:black; font-weight:bold;">
-            <th>Name</th>
-            <th>Status</th>
-        </tr>
-    """
+    # html += """
+    # <table border="1" cellpadding="6" cellspacing="0"
+    #    style="border-collapse: collapse; font-family:Arial; margin-bottom:30px;">
+    #     <tr style="background-color:#f7941d; color:black; font-weight:bold;">
+    #         <th>Name</th>
+    #         <th>Status</th>
+    #     </tr>
+    # """
 
-    for user in leave_users:
-        html += f"""
-        <tr style="background-color:#a9d18e;">
-            <td>{user['user_name']}</td>
-            <td>Absent</td>
-        </tr>
-        """
+    # for user in leave_users:
+    #     html += f"""
+    #     <tr style="background-color:#a9d18e;">
+    #         <td>{user['user_name']}</td>
+    #         <td>Absent</td>
+    #     </tr>
+    #     """
 
-    html += "</table>"
+    # html += "</table>"
 
     # ---------------- Production Table ----------------
     full_title = report_date.strftime("%d %B %Y") + " Production Report"
