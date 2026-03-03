@@ -20,7 +20,7 @@ RECIPIENTS = [
 ]
 
 CC_RECIPIENTS = [
-    "sriman.narayan@transformsolution.net"   # replace with real email
+    "sriman.narayan@transformsolution.net"
 ]
 
 # -------------------------------
@@ -44,6 +44,7 @@ def fetch_data():
 
     try:
         report_date = datetime.now().date() - timedelta(days=1)
+        print(f"Fetching data for report date: {report_date}")  
 
         # Get all active users
         cursor.execute("""
@@ -158,7 +159,7 @@ def generate_html(report_date, all_users, tracker_data):
         first = True
         for row in rows:
 
-            created = row["date_time"].strftime("%m/%d/%Y %H:%M")
+            created = row["date_time"].strftime("%d/%m/%Y %H:%M")
 
             html += f"""
             <tr>

@@ -21,7 +21,7 @@ RECIPIENTS = [
 ]
 
 CC_RECIPIENTS = [
-    "sriman.narayan@transformsolution.net"   # replace with real email
+    "sriman.narayan@transformsolution.net" 
 ]
 # -------------------------------
 # DATABASE CONNECTION
@@ -109,7 +109,7 @@ def generate_html_report(data,start_str, end_str):
 
     for index, row in enumerate(data):
         dt = row['date_time']
-        formatted_date = f"{dt.month}/{dt.day}/{dt.year} {dt.strftime('%H:%M:%S')}"
+        formatted_date = f"{dt.day}/{dt.month}/{dt.year} {dt.strftime('%H:%M:%S')}"
 
         # Alternate row colors
         row_color = "#e6f2f8" if index % 2 == 0 else "#ffffff"
