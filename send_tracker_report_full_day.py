@@ -166,9 +166,9 @@ def generate_html(report_date, all_users, tracker_data):
                 <td>{user if first else ''}</td>
                 <td>{created}</td>
                 <td>{row['project_name']}</td>
-                <td style="text-align:right;">{row['tenure_target']}</td>
-                <td style="text-align:right;">{row['production']}</td>
-                <td style="text-align:right;">{row['billable_hours']}</td>
+                <td style="text-align:right;">{float(row['tenure_target']):.2f}</td>
+                <td style="text-align:right;">{float(row['production']):.2f}</td>
+                <td style="text-align:right;">{float(row['billable_hours']):.2f}</td>
             </tr>
             """
 
