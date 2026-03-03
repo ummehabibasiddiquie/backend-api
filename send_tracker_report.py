@@ -17,10 +17,12 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 RECIPIENTS = [
     "ummehabiba.siddiquie@transformsolution.net",
     "mohsin.pathan@transformsolution.net",
-    "dharmesh.jotania@transformsolution.net",
-    "sriman.narayan@transformsolution.net"
+    "dharmesh.jotania@transformsolution.net"
 ]
 
+CC_RECIPIENTS = [
+    "sriman.narayan@transformsolution.net" 
+]
 # -------------------------------
 # DATABASE CONNECTION
 # -------------------------------
@@ -107,7 +109,7 @@ def generate_html_report(data,start_str, end_str):
 
     for index, row in enumerate(data):
         dt = row['date_time']
-        formatted_date = f"{dt.month}/{dt.day}/{dt.year} {dt.strftime('%H:%M:%S')}"
+        formatted_date = f"{dt.day}/{dt.month}/{dt.year} {dt.strftime('%H:%M:%S')}"
 
         # Alternate row colors
         row_color = "#e6f2f8" if index % 2 == 0 else "#ffffff"
@@ -148,8 +150,11 @@ def send_email(to_emails, subject, html_body):
     msg = MIMEMultipart("alternative")
     msg["From"] = f"{from_name} <{user}>"
     msg["To"] = ", ".join(recipients)
+    msg["Cc"] = ", ".join(CC_RECIPIENTS) 
     msg["Subject"] = subject
     msg.attach(MIMEText(html_body, "html"))
+    
+    all_recipients = RECIPIENTS + CC_RECIPIENTS
 
     print(f"Connecting to SMTP: {host}:{port}")
     with smtplib.SMTP(host, port) as server:
@@ -157,7 +162,7 @@ def send_email(to_emails, subject, html_body):
         server.starttls()
         server.ehlo()
         server.login(user, password)
-        server.sendmail(user, recipients, msg.as_string())
+        server.sendmail(user, all_recipients, msg.as_string())
     print("✅ Email sent successfully")
 
 # -------------------------------
