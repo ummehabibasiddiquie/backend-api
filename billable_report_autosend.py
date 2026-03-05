@@ -16,8 +16,15 @@ import logging
 # -------------------------------
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
-RECIPIENTS = ["ummehabiba.siddiquie@transformsolution.net"]
-CC_RECIPIENTS = []
+RECIPIENTS = [
+    "ummehabiba.siddiquie@transformsolution.net",
+    "mohsin.pathan@transformsolution.net",
+    "dharmesh.jotania@transformsolution.net"
+]
+
+CC_RECIPIENTS = [
+    "sriman.narayan@transformsolution.net"
+]
 
 LOG_FILE = Path(__file__).resolve().parent / "daily_tracker_report.log"
 logging.basicConfig(
@@ -50,11 +57,11 @@ def fetch_data():
 
     try:
 
-        # today = datetime.now().date()
-        # report_date = today - timedelta(days=1)
+        today = datetime.now().date()
+        report_date = today - timedelta(days=1)
 
         # TEST DATE
-        report_date = datetime.strptime("2026-02-27", "%Y-%m-%d").date()
+        # report_date = datetime.strptime("2026-02-27", "%Y-%m-%d").date()
         report_month = report_date.strftime('%b%Y').upper() 
 
         logging.info(f"Fetching data for report date: {report_date}")
