@@ -90,8 +90,7 @@ def fetch_data():
         # -------------------------
         cursor.execute(f"""
             SELECT user_id,
-                   DATE(date_time) as work_date,
-                   SUM(production / NULLIF(tenure_target,0)) AS worked_hours
+                SUM(production / NULLIF(tenure_target,0)) AS worked_hours
             FROM task_work_tracker
             WHERE DATE(date_time)=%s
             AND user_id IN ({in_ph})
@@ -114,7 +113,7 @@ def fetch_data():
 
         cursor.execute(f"""
             SELECT user_id,
-                   SUM(production / NULLIF(tenure_target,0)) AS mtd_hours
+                SUM(production / NULLIF(tenure_target,0)) AS mtd_hours
             FROM task_work_tracker
             WHERE DATE(date_time) BETWEEN %s AND %s
             AND user_id IN ({in_ph})
