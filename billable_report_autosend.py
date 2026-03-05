@@ -43,12 +43,16 @@ def get_db_connection():
 def fetch_data():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
+
     try:
-        today = datetime.now().date()
-        report_date = today - timedelta(days=1)
+        # today = datetime.now().date()
+        # report_date = today - timedelta(days=1)
+        
+        # TEST DATE
+        report_date = datetime.strptime("2026-03-03", "%Y-%m-%d").date()
+
         logging.info(f"Fetching data for report date: {report_date}")
 
-        # Active agents with monthly tracker info
         cursor.execute("""
             SELECT u.user_id, u.user_name, t.team_id, t.team_name,
                    COALESCE(umt.monthly_target,0) AS monthly_target,
@@ -61,97 +65,164 @@ def fetch_data():
               ON umt.user_id = u.user_id
              AND umt.is_active=1
              AND umt.month_year = DATE_FORMAT(%s, '%%b%%Y')
-            WHERE u.is_delete != 0 AND u.is_active=1
+            WHERE u.is_delete != 0
+              AND u.is_active=1
               AND r.role_name='Agent'
             ORDER BY t.team_name, u.user_name
         """, (report_date,))
+
         all_users = cursor.fetchall()
+        
+        # logging.info(f"Users fetched: {len(all_users)}")
+        print(f"Users fetched: {len(all_users)}")
+
         if not all_users:
-            logging.warning("No active agents found for report.")
+            print(f"No users found for report date: {report_date}") 
             return report_date, []
+            
 
         user_ids = [u['user_id'] for u in all_users]
         in_ph = ",".join(["%s"] * len(user_ids))
+        print(f"User IDs for IN clause: {user_ids}")    
 
-        # Yesterday tracker data
+        # -------------------------
+        # YESTERDAY WORKED HOURS
+        # -------------------------
         cursor.execute(f"""
-            SELECT t.user_id, DATE(t.date_time) as work_date,
-                   SUM(t.production / NULLIF(t.tenure_target,0)) AS worked_hours
-            FROM task_work_tracker t
-            WHERE DATE(t.date_time) = %s
-              AND t.user_id IN ({in_ph})
-              AND t.is_active=1
-            GROUP BY t.user_id, DATE(t.date_time)
+            SELECT user_id,
+                   DATE(date_time) as work_date,
+                   SUM(production / NULLIF(tenure_target,0)) AS worked_hours
+            FROM task_work_tracker
+            WHERE DATE(date_time)=%s
+            AND user_id IN ({in_ph})
+            AND is_active=1
+            GROUP BY user_id
         """, [report_date] + user_ids)
-        tracker_daily = {r['user_id']: {'worked_hours': float(r['worked_hours'] or 0), 'date': r['work_date']} for r in cursor.fetchall()}
 
-        # MTD hours
+        tracker_daily = {
+            r['user_id']: {
+                "worked_hours": float(r["worked_hours"] or 0),
+                "date": r["work_date"]
+            }
+            for r in cursor.fetchall()
+        }
+
+        # -------------------------
+        # MTD HOURS
+        # -------------------------
         month_start = report_date.replace(day=1)
-        cursor.execute(f"""
-            SELECT t.user_id,
-                   SUM(t.production / NULLIF(t.tenure_target,0)) AS mtd_hours,
-                   COUNT(DISTINCT DATE(t.date_time)) AS days_worked
-            FROM task_work_tracker t
-            WHERE DATE(t.date_time) BETWEEN %s AND %s
-              AND t.user_id IN ({in_ph})
-              AND t.is_active=1
-            GROUP BY t.user_id
-        """, [month_start, report_date] + user_ids)
-        tracker_mtd = {r['user_id']: {'mtd_hours': float(r['mtd_hours'] or 0), 'days_worked': r['days_worked']} for r in cursor.fetchall()}
 
-        # Last QC score
         cursor.execute(f"""
-            SELECT t1.user_id, t1.qc_score, t1.assigned_hours, t1.date as qc_date
+            SELECT user_id,
+                   SUM(production / NULLIF(tenure_target,0)) AS mtd_hours
+            FROM task_work_tracker
+            WHERE DATE(date_time) BETWEEN %s AND %s
+            AND user_id IN ({in_ph})
+            AND is_active=1
+            GROUP BY user_id
+        """, [month_start, report_date] + user_ids)
+
+        tracker_mtd = {
+            r['user_id']: float(r['mtd_hours'] or 0)
+            for r in cursor.fetchall()
+        }
+
+        # -------------------------
+        # LAST QC SCORE
+        # -------------------------
+        cursor.execute(f"""
+            SELECT t1.user_id, t1.qc_score, t1.assigned_hours, t1.date
             FROM temp_qc t1
             JOIN (
-                SELECT user_id, MAX(date) AS last_qc_date
+                SELECT user_id, MAX(date) last_qc_date
                 FROM temp_qc
-                WHERE date < %s AND qc_score IS NOT NULL
-                  AND user_id IN ({in_ph})
+                WHERE qc_score IS NOT NULL
+                AND date < %s
+                AND user_id IN ({in_ph})
                 GROUP BY user_id
             ) t2
-            ON t1.user_id = t2.user_id AND t1.date = t2.last_qc_date
+            ON t1.user_id=t2.user_id AND t1.date=t2.last_qc_date
         """, [report_date] + user_ids)
+
         last_qc = {r['user_id']: r for r in cursor.fetchall()}
 
-        # Combine
-        # ... inside fetch_data() loop
+        # -------------------------
+        # COMBINE DATA
+        # -------------------------
         for u in all_users:
-            uid = u['user_id']
-            worked_hours = tracker_daily.get(uid, 0)
+            print(f"Processing user: {u['user_name']} (ID: {u['user_id']})")
+
+            uid = u["user_id"]
+
+            worked_data = tracker_daily.get(uid, {})
+            worked_hours = worked_data.get("worked_hours", 0)
+
             mtd_hours = tracker_mtd.get(uid, 0)
+
             qc_data = last_qc.get(uid, {})
 
-            u['daily_worked_hours'] = worked_hours
-            u['mtd_hours'] = mtd_hours
-            u['qc_score'] = qc_data.get('qc_score')
-            u['assigned_hours'] = qc_data.get('assigned_hours', 0)
+            u["daily_worked_hours"] = worked_hours
+            u["mtd_hours"] = mtd_hours
 
-            # Dates for headers
-            u['worked_hours_date'] = report_date.strftime("%Y-%m-%d") if worked_hours else None
-            u['assigned_hours_date'] = report_date.strftime("%Y-%m-%d") if worked_hours else None
-            u['qc_date'] = qc_data.get('date').strftime("%Y-%m-%d") if qc_data.get('date') else None
+            u["qc_score"] = qc_data.get("qc_score")
+            u["assigned_hours"] = float(qc_data.get("assigned_hours") or 0)
 
-            # Calculations
-            monthly_target = float(u.get('monthly_target') or 0)
-            extra_assigned = float(u.get('extra_assigned_hours') or 0)
-            working_days = int(u.get('working_days') or 0)
+            # -------------------------
+            # DATE HEADERS
+            # -------------------------
+            worked_date = worked_data.get("date")
+            
+            if worked_date:
+                if isinstance(worked_date, str):
+                    worked_date = datetime.strptime(worked_date, "%Y-%m-%d")
+                u["worked_hours_date"] = worked_date.strftime("%Y-%m-%d")
+            else:
+                u["worked_hours_date"] = None
+
+            # u["worked_hours_date"] = worked_date.strftime("%Y-%m-%d") if worked_date else None
+
+            # Assigned hours must use SAME date as worked hours
+            u["assigned_hours_date"] = u["worked_hours_date"]
+
+            qc_date = qc_data.get("date")
+            if qc_date:
+                if isinstance(qc_date, str):
+                    qc_date = datetime.strptime(qc_date, "%Y-%m-%d")
+                u["qc_date"] = qc_date.strftime("%Y-%m-%d")
+            else:
+                u["qc_date"] = None
+            # u["qc_date"] = qc_date.strftime("%Y-%m-%d") if qc_date else None
+
+            # -------------------------
+            # CALCULATIONS
+            # -------------------------
+            monthly_target = float(u.get("monthly_target") or 0)
+            extra_assigned = float(u.get("extra_assigned_hours") or 0)
+            working_days = int(u.get("working_days") or 0)
 
             monthly_goal = monthly_target + extra_assigned
             pending_goal = max(0, monthly_goal - mtd_hours)
 
             remaining_days = max(0, working_days - 1)
-            daily_required_hours = (pending_goal / remaining_days) if remaining_days else 0
 
-            u['monthly_goal'] = monthly_goal
-            u['pending_goal'] = pending_goal
-            u['daily_required_hours'] = daily_required_hours
+            daily_required_hours = (
+                pending_goal / remaining_days if remaining_days else 0
+            )
 
+            u["monthly_goal"] = monthly_goal
+            u["pending_goal"] = pending_goal
+            u["daily_required_hours"] = daily_required_hours
+            print(f"User: {u['user_name']}, Worked Hours: {worked_hours}, MTD Hours: {mtd_hours}, QC Score: {u['qc_score']}, Daily Required Hours: {daily_required_hours:.2f}")
+
+        # IMPORTANT
         return report_date, all_users
 
+    except Exception as e:
+        print(f"Error fetching data: {str(e)}")
     finally:
         cursor.close()
         conn.close()
+
 
 # -------------------------------
 # GENERATE HTML
@@ -165,12 +236,17 @@ def generate_html(report_date, data_rows):
     html = f"<p style='font-family:Arial;'>Dear All,<br><br>Tracker Report of <b>{day_str} {month_year}</b></p>"
 
     # Determine the latest dates for each column
-    latest_assigned_date = max([u.get('assigned_hours_date') for u in data_rows if u.get('assigned_hours_date')], default=None)
-    latest_worked_date = max([u.get('worked_hours_date') for u in data_rows if u.get('worked_hours_date')], default=None)
-    latest_qc_date = max([u.get('qc_date') for u in data_rows if u.get('qc_date')], default=None)
+    # Determine the latest dates for each column
+    worked_date_str = report_date.strftime("%Y-%m-%d")
+    assigned_date_str = worked_date_str
 
-    assigned_header = f"Assigned Hours ({latest_assigned_date})" if latest_assigned_date else "Assigned Hours"
-    worked_header = f"Worked Hours ({latest_worked_date})" if latest_worked_date else "Worked Hours"
+    latest_qc_date = max(
+        [u.get("qc_date") for u in data_rows if u.get("qc_date")],
+        default=None
+    )
+
+    assigned_header = f"Assigned Hours ({assigned_date_str})"
+    worked_header = f"Worked Hours ({worked_date_str})"
     qc_header = f"QC Score ({latest_qc_date})" if latest_qc_date else "QC Score"
 
     html += f"""
@@ -234,6 +310,8 @@ def send_email(subject, html_body):
 if __name__ == "__main__":
     try:
         report_date, data_rows = fetch_data()
+        logging.info(f"Rows returned: {len(data_rows)}")
+        print(f"Rows returned: {len(data_rows)}")
         if not data_rows:
             logging.info(f"No data found for {report_date}, email not sent.")
             exit(0)
