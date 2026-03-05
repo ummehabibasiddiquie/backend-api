@@ -15,12 +15,12 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 RECIPIENTS = [
     "ummehabiba.siddiquie@transformsolution.net",
-    # "mohsin.pathan@transformsolution.net",
-    # "dharmesh.jotania@transformsolution.net"
+    "mohsin.pathan@transformsolution.net",
+    "dharmesh.jotania@transformsolution.net"
 ]
 
 CC_RECIPIENTS = [
-    # "sriman.narayan@transformsolution.net"
+    "sriman.narayan@transformsolution.net"
 ]
 
 # -------------------------------
