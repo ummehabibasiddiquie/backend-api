@@ -101,7 +101,8 @@ def fetch_data():
         tracker_daily = {
             r['user_id']: {
                 "worked_hours": float(r["worked_hours"] or 0),
-                "date": r["work_date"]
+                "date": report_date
+
             }
             for r in cursor.fetchall()
         }
