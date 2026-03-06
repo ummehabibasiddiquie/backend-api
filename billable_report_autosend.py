@@ -174,8 +174,9 @@ def fetch_data():
             """
             SELECT MAX(DATE(date)) AS latest_qc_date
             FROM temp_qc
-            WHERE qc_score IS NOT NULL
-            """
+            WHERE qc_score IS NOT NULL AND date <= %s
+            """,
+            (report_date,)
         )
 
         row = cursor.fetchone()
