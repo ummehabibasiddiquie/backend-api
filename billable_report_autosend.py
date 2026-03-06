@@ -384,12 +384,12 @@ def generate_html(report_date, data_rows):
             <td>{u['user_name']}</td>
             <td align="right">{assigned:.2f}</td>
             <td align="right">{worked:.2f}</td>
-            <td align="right">{u.get('qc_score',''):.2f}</td>
+            <td align="right">{f"{u['qc_score']:.2f}" if u.get('qc_score') is not None else ""}</td>
             <td align="right">{required:.2f}</td>
             <td align="right">{mtd:.2f}</td>
             <td align="right">{goal:.2f}</td>
             <td align="right">{pending:.2f}</td>
-            <td align="right">{u.get('avg_qc_score',''):.2f}</td>
+            <td align="right">{f"{u['avg_qc_score']:.2f}" if u.get('avg_qc_score') is not None else ""}</td>
             </tr>
             """
 
