@@ -247,6 +247,20 @@ def generate_html(report_date, data_rows):
 
     day_str = report_date.strftime("%d %b")
     month_year = report_date.strftime("%B %Y")
+    worked_date = report_date.strftime("%d %b")
+    assigned_date = worked_date
+    
+    # Find latest QC date
+    qc_dates = []
+    for u in data_rows:
+        qc_date = u.get("qc_date")
+        if qc_date:
+            if isinstance(qc_date, str):
+                qc_date = datetime.strptime(qc_date, "%Y-%m-%d")
+            qc_dates.append(qc_date)
+
+    latest_qc_date = max(qc_dates) if qc_dates else None
+    latest_qc_date_str = latest_qc_date.strftime("%d %b") if latest_qc_date else ""
 
     html = f"""
     <p><b>Delivered billable hours on {day_str} {month_year}</b></p>
@@ -261,14 +275,14 @@ def generate_html(report_date, data_rows):
     </tr>
 
     <tr style="background:#FFE699;font-weight:bold">
-        <th>Assigned</th>
-        <th>Worked</th>
-        <th>Quality</th>
-        <th>Daily Required</th>
-        <th>MTD Hours</th>
+        <th >Assigned <br>{assigned_date}</th>
+        <th>Worked <br>{worked_date}</th>
+        <th>Quality <br>{latest_qc_date_str}</th>
+        <th>Daily Required <br> Hours</th>
+        <th>Delivered-MTD <br> till {worked_date}</th>
         <th>Monthly Goal</th>
-        <th>Pending</th>
-        <th>Avg QC</th>
+        <th>Pending Goal</th>
+        <th>Avg QC till <br>{worked_date}</th>
     </tr>
     """
 
