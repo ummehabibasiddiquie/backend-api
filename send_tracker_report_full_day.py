@@ -43,7 +43,13 @@ def fetch_data():
     cursor = conn.cursor(dictionary=True)
 
     try:
-        report_date = datetime.now().date() - timedelta(days=1)
+        
+        # today = datetime.now().date()
+        # report_date = today - timedelta(days=1)
+
+        # TEST DATE
+        report_date = datetime.strptime("2026-03-03", "%Y-%m-%d").date()
+        
         print(f"Fetching data for report date: {report_date}")  
 
         # Get all active users
