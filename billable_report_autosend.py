@@ -172,7 +172,7 @@ def fetch_data():
 
         cursor.execute(
             f"""
-            SELECT t1.user_id, t1.qc_score, t1.assigned_hours, DATE(t1.date) AS qc_date
+            SELECT t1.user_id, t1.qc_score, DATE(t1.date) AS qc_date
             FROM temp_qc t1
             JOIN (
                 SELECT user_id, MAX(DATE(date)) AS last_qc_date
@@ -188,6 +188,25 @@ def fetch_data():
         )
 
         qc_map = {r["user_id"]: r for r in cursor.fetchall()}
+        
+        # -------------------------
+        # ASSIGNED HOURS (REPORT DATE)
+        # -------------------------
+
+        cursor.execute(
+            f"""
+            SELECT user_id, assigned_hours
+            FROM temp_qc
+            WHERE DATE(date) = %s
+            AND user_id IN ({in_ph})
+            """,
+            [report_date] + user_ids,
+        )
+
+        assigned_map = {
+            r["user_id"]: float(r["assigned_hours"] or 0)
+            for r in cursor.fetchall()
+        }
 
         # -------------------------
         # CALCULATIONS
@@ -206,7 +225,7 @@ def fetch_data():
             if qc_date and isinstance(qc_date, datetime):
                 qc_date = qc_date.strftime("%Y-%m-%d")
 
-            assigned = float(qc_data.get("assigned_hours") or 0)
+            assigned = assigned_map.get(uid, 0)
 
             monthly_target = float(u["monthly_target"])
             extra = float(u["extra_assigned_hours"])
