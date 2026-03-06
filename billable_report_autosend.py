@@ -178,6 +178,7 @@ def fetch_data():
             """,
             (report_date,)
         )
+        print(report_date)
 
         row = cursor.fetchone()
         latest_qc_date = row["latest_qc_date"]
