@@ -167,27 +167,35 @@ def fetch_data():
         }
 
         # -------------------------
-        # LAST QC BEFORE REPORT DATE
+        # LATEST QC DATE (GLOBAL)
         # -------------------------
 
         cursor.execute(
-            f"""
-            SELECT t1.user_id, t1.qc_score, DATE(t1.date) AS qc_date
-            FROM temp_qc t1
-            JOIN (
-                SELECT user_id, MAX(DATE(date)) AS last_qc_date
-                FROM temp_qc
-                WHERE qc_score IS NOT NULL
-                AND DATE(date) <= %s
-                AND user_id IN ({in_ph})
-                GROUP BY user_id
-            ) t2
-            ON t1.user_id = t2.user_id AND DATE(t1.date) = t2.last_qc_date
-            """,
-            [report_date] + user_ids,
+            """
+            SELECT MAX(DATE(date)) AS latest_qc_date
+            FROM temp_qc
+            WHERE qc_score IS NOT NULL
+            """
         )
 
-        qc_map = {r["user_id"]: r for r in cursor.fetchall()}
+        row = cursor.fetchone()
+        latest_qc_date = row["latest_qc_date"]
+
+        qc_map = {}
+
+        if latest_qc_date:
+
+            cursor.execute(
+                f"""
+                SELECT user_id, qc_score, DATE(date) AS qc_date
+                FROM temp_qc
+                WHERE DATE(date) = %s
+                AND user_id IN ({in_ph})
+                """,
+                [latest_qc_date] + user_ids,
+            )
+
+            qc_map = {r["user_id"]: r for r in cursor.fetchall()}
         
         # -------------------------
         # ASSIGNED HOURS (REPORT DATE)
@@ -221,6 +229,7 @@ def fetch_data():
 
             qc_data = qc_map.get(uid, {})
 
+            print(qc_data.get("qc_date"))
             qc_date = qc_data.get("qc_date")
             if qc_date and isinstance(qc_date, datetime):
                 qc_date = qc_date.strftime("%Y-%m-%d")
