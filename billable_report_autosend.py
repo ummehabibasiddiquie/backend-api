@@ -63,7 +63,7 @@ def fetch_data():
         # report_date = today - timedelta(days=1)
 
         # TEST DATE
-        report_date = datetime.strptime("2026-02-25", "%Y-%m-%d").date()
+        report_date = datetime.strptime("2026-03-02", "%Y-%m-%d").date()
         report_month = report_date.strftime("%b%Y").upper()
 
         logging.info(f"Fetching data for report date {report_date}")
@@ -439,8 +439,8 @@ def send_email(subject, html):
 
     msg["From"] = user
     msg["To"] = ",".join(RECIPIENTS)
+    msg["Cc"] = ", ".join(CC_RECIPIENTS) 
     msg["Subject"] = subject
-
     msg.attach(MIMEText(html, "html"))
 
     all_recipients = RECIPIENTS + CC_RECIPIENTS
