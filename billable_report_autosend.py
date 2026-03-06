@@ -202,6 +202,31 @@ def fetch_data():
             print(f"QC Map: {qc_map}")
         
         # -------------------------
+        # AVG QC SCORE (MONTH TILL LATEST QC DATE)
+        # -------------------------
+
+        avg_qc_map = {}
+
+        if latest_qc_date:
+
+            cursor.execute(
+                f"""
+                SELECT user_id, AVG(qc_score) AS avg_qc
+                FROM temp_qc
+                WHERE qc_score IS NOT NULL
+                AND DATE(date) BETWEEN %s AND %s
+                AND user_id IN ({in_ph})
+                GROUP BY user_id
+                """,
+                [month_start, latest_qc_date] + user_ids,
+            )
+
+            avg_qc_map = {
+                r["user_id"]: float(r["avg_qc"] or 0)
+                for r in cursor.fetchall()
+            }
+                
+        # -------------------------
         # ASSIGNED HOURS (REPORT DATE)
         # -------------------------
 
@@ -238,6 +263,7 @@ def fetch_data():
             if qc_date and isinstance(qc_date, datetime):
                 qc_date = qc_date.strftime("%Y-%m-%d")
 
+            avg_qc = avg_qc_map.get(uid, 0)
             assigned = assigned_map.get(uid, 0)
 
             monthly_target = float(u["monthly_target"])
@@ -259,6 +285,7 @@ def fetch_data():
                     "assigned_hours": assigned,
                     "qc_score": qc_data.get("qc_score"),
                     "qc_date": qc_date,
+                    "avg_qc_score": avg_qc,
                     "monthly_goal": monthly_goal,
                     "pending_goal": pending,
                     "daily_required_hours": daily_required,
@@ -362,7 +389,7 @@ def generate_html(report_date, data_rows):
             <td align="right">{mtd:.2f}</td>
             <td align="right">{goal:.2f}</td>
             <td align="right">{pending:.2f}</td>
-            <td align="right">{u.get('qc_score','')}</td>
+            <td align="right">{u.get('avg_qc_score','')}</td>
             </tr>
             """
 
