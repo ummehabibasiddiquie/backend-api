@@ -48,7 +48,7 @@ def fetch_data():
         # report_date = today - timedelta(days=1)
 
         # TEST DATE
-        report_date = datetime.strptime("2026-03-03", "%Y-%m-%d").date()
+        report_date = datetime.strptime("2026-03-02", "%Y-%m-%d").date()
         
         print(f"Fetching data for report date: {report_date}")  
 
@@ -69,15 +69,15 @@ def fetch_data():
                 t.date_time,
                 u.user_id,
                 u.user_name,
-                p.project_name,
+                p.task_name,
                 t.production,
                 t.tenure_target,
                 t.billable_hours
             FROM task_work_tracker t
             JOIN tfs_user u ON t.user_id = u.user_id
-            JOIN project p ON t.project_id = p.project_id
+            JOIN task p ON t.task_id = p.task_id
             WHERE DATE(t.date_time) = %s
-              AND u.is_delete != 0
+              AND u.is_delete != 0 AND t.is_active = 1
             ORDER BY u.user_name, t.date_time
         """, (report_date,))
 
@@ -141,7 +141,7 @@ def generate_html(report_date, all_users, tracker_data):
         <tr style="background-color:#d9e1f2; font-weight:bold;">
             <th>Name</th>
             <th>Created</th>
-            <th>Project Name</th>
+            <th>Task Name</th>
             <th>Target</th>
             <th>Production</th>
             <th>Billable Hours</th>
@@ -171,7 +171,7 @@ def generate_html(report_date, all_users, tracker_data):
             <tr>
                 <td>{user if first else ''}</td>
                 <td>{created}</td>
-                <td>{row['project_name']}</td>
+                <td>{row['task_name']}</td>
                 <td style="text-align:right;">{float(row['tenure_target']):.2f}</td>
                 <td style="text-align:right;">{float(row['production']):.2f}</td>
                 <td style="text-align:right;">{float(row['billable_hours']):.2f}</td>

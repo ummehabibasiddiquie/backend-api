@@ -58,13 +58,13 @@ def get_daily_tracker_report_till_now():
             SELECT 
                 t.date_time,
                 u.user_name,
-                p.project_name,
+                p.task_name,
                 t.production,
                 t.tenure_target,
                 t.billable_hours
             FROM task_work_tracker t
             JOIN tfs_user u ON t.user_id = u.user_id
-            JOIN project p ON t.project_id = p.project_id
+            JOIN task p ON t.task_id = p.task_id
             WHERE t.date_time >= %s
               AND t.date_time <= %s
               AND t.is_active != 0
@@ -112,7 +112,7 @@ def generate_html_report(data, start_str, end_str):
         <tr style="background-color: #2f6f8f; color: white;">
             <th style="padding:4px; border:1px solid #ccc;">Created</th>
             <th style="padding:4px; border:1px solid #ccc;">Name</th>
-            <th style="padding:4px; border:1px solid #ccc;">Project Name</th>
+            <th style="padding:4px; border:1px solid #ccc;">Task Name</th>
             <th style="padding:4px; border:1px solid #ccc;">Production</th>
             <th style="padding:4px; border:1px solid #ccc;">Target</th>
             <th style="padding:4px; border:1px solid #ccc;">Billable Hours</th>
@@ -138,7 +138,7 @@ def generate_html_report(data, start_str, end_str):
             <tr style="background-color: {row_color};">
                 <td style="padding:4px; border:1px solid #ccc;">{formatted_date}</td>
                 <td style="padding:4px; border:1px solid #ccc;">{row['user_name']}</td>
-                <td style="padding:4px; border:1px solid #ccc;">{row['project_name']}</td>
+                <td style="padding:4px; border:1px solid #ccc;">{row['task_name']}</td>
                 <td style="padding:4px; border:1px solid #ccc; text-align:center;">
                     {float(row['production']):.2f}
                 </td>
