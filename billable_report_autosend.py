@@ -181,6 +181,7 @@ def fetch_data():
 
         row = cursor.fetchone()
         latest_qc_date = row["latest_qc_date"]
+        print(f"Latest QC date: {latest_qc_date}")
 
         qc_map = {}
 
@@ -197,6 +198,7 @@ def fetch_data():
             )
 
             qc_map = {r["user_id"]: r for r in cursor.fetchall()}
+            print(f"QC Map: {qc_map}")
         
         # -------------------------
         # ASSIGNED HOURS (REPORT DATE)
