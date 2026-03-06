@@ -59,11 +59,12 @@ def fetch_data():
 
     try:
 
-        # today = datetime.now().date()
-        # report_date = today - timedelta(days=1)
+        today = datetime.now().date()
+        report_date = today - timedelta(days=1)
 
         # TEST DATE
-        report_date = datetime.strptime("2026-03-02", "%Y-%m-%d").date()
+        # report_date = datetime.strptime("2026-03-02", "%Y-%m-%d").date()
+        
         report_month = report_date.strftime("%b%Y").upper()
 
         logging.info(f"Fetching data for report date {report_date}")
@@ -347,7 +348,7 @@ def generate_html(report_date, data_rows):
         <th>Delivered-MTD <br> till {worked_date}</th>
         <th>Monthly Goal</th>
         <th>Pending Goal</th>
-        <th>Avg QC till <br>{worked_date}</th>
+        <th>Avg QC till <br>{latest_qc_date_str}</th>
     </tr>
     """
 
