@@ -27,7 +27,6 @@ CC_RECIPIENTS = [
     "sriman.narayan@transformsolution.net"
 ]
 
-CC_RECIPIENTS = []
 
 LOG_FILE = Path(__file__).resolve().parent / "daily_tracker_report.log"
 
