@@ -88,6 +88,7 @@ def fetch_data():
                 AND umt.month_year=%s
             WHERE u.is_delete != 0
             AND u.is_active=1
+            AND u.is_delete != 0
             AND r.role_name='Agent'
             AND t.team_name IN ('A','B')
             ORDER BY
@@ -222,8 +223,6 @@ def fetch_data():
                 WHERE qc_score IS NOT NULL
                 AND DATE(date) BETWEEN %s AND %s
                 AND user_id IN ({in_ph})
-                AND is_active=1
-                AND is_delete!=0
                 GROUP BY user_id
                 """,
                 [month_start, latest_qc_date] + user_ids,
