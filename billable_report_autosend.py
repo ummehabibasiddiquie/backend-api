@@ -178,11 +178,11 @@ def fetch_data():
             """,
             (report_date,)
         )
-        print(report_date)
+        # print(report_date)
 
         row = cursor.fetchone()
         latest_qc_date = row["latest_qc_date"]
-        print(f"Latest QC date: {latest_qc_date}")
+        # print(f"Latest QC date: {latest_qc_date}")
 
         qc_map = {}
 
@@ -199,7 +199,7 @@ def fetch_data():
             )
 
             qc_map = {r["user_id"]: r for r in cursor.fetchall()}
-            print(f"QC Map: {qc_map}")
+            # print(f"QC Map: {qc_map}")
         
         # -------------------------
         # AVG QC SCORE (MONTH TILL LATEST QC DATE)
@@ -216,6 +216,8 @@ def fetch_data():
                 WHERE qc_score IS NOT NULL
                 AND DATE(date) BETWEEN %s AND %s
                 AND user_id IN ({in_ph})
+                AND is_active=1
+                AND is_delete!=0
                 GROUP BY user_id
                 """,
                 [month_start, latest_qc_date] + user_ids,
@@ -258,7 +260,7 @@ def fetch_data():
 
             qc_data = qc_map.get(uid, {})
 
-            print(qc_data.get("qc_date"))
+            # print(qc_data.get("qc_date"))
             qc_date = qc_data.get("qc_date")
             if qc_date and isinstance(qc_date, datetime):
                 qc_date = qc_date.strftime("%Y-%m-%d")
