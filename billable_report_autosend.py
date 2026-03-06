@@ -63,7 +63,7 @@ def fetch_data():
         # report_date = today - timedelta(days=1)
 
         # TEST DATE
-        report_date = datetime.strptime("2026-02-27", "%Y-%m-%d").date()
+        report_date = datetime.strptime("2026-02-25", "%Y-%m-%d").date()
         report_month = report_date.strftime("%b%Y").upper()
 
         logging.info(f"Fetching data for report date {report_date}")
@@ -443,10 +443,12 @@ def send_email(subject, html):
 
     msg.attach(MIMEText(html, "html"))
 
+    all_recipients = RECIPIENTS + CC_RECIPIENTS
+    
     with smtplib.SMTP(host, port) as server:
         server.starttls()
         server.login(user, password)
-        server.sendmail(user, RECIPIENTS + CC_RECIPIENTS, msg.as_string())
+        server.sendmail(user, all_recipients, msg.as_string())
 
 
 # -------------------------------
