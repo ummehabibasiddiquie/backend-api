@@ -58,7 +58,7 @@ def fetch_data():
         # report_date = today - timedelta(days=1)
 
         # TEST DATE
-        report_date = datetime.strptime("2026-03-03", "%Y-%m-%d").date()
+        report_date = datetime.strptime("2026-02-26", "%Y-%m-%d").date()
         report_month = report_date.strftime("%b%Y").upper()
 
         logging.info(f"Fetching data for report date {report_date}")
