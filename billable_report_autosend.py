@@ -384,14 +384,6 @@ def generate_html(report_date, data_rows):
         team_mtd = 0
         team_goal = 0
         team_pending = 0
-        
-        # GRAND TOTAL VARIABLES
-        grand_assigned = 0
-        grand_worked = 0
-        grand_required = 0
-        grand_mtd = 0
-        grand_goal = 0
-        grand_pending = 0
 
         for u in members:
 
@@ -422,6 +414,13 @@ def generate_html(report_date, data_rows):
             team_mtd += mtd
             team_goal += goal
             team_pending += pending
+            
+            grand_assigned += assigned
+            grand_worked += worked
+            grand_required += required
+            grand_mtd += mtd
+            grand_goal += goal
+            grand_pending += pending
 
         html += f"""
         <tr style="font-weight:bold;background:#C9DAF8">
@@ -436,8 +435,8 @@ def generate_html(report_date, data_rows):
         <td></td>
         </tr>
         """
-        
-        html += f"""
+
+    html += f"""
         <tr style="font-weight:bold;background:#A4C2F4">
         <td>Grand Total</td>
         <td align="right">{grand_assigned:.2f}</td>
