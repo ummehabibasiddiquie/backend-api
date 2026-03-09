@@ -19,12 +19,12 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 RECIPIENTS = [
     "ummehabiba.siddiquie@transformsolution.net",
-    "mohsin.pathan@transformsolution.net",
-    "dharmesh.jotania@transformsolution.net"
+    # "mohsin.pathan@transformsolution.net",
+    # "dharmesh.jotania@transformsolution.net"
 ]
 
 CC_RECIPIENTS = [
-    "sriman.narayan@transformsolution.net"
+    # "sriman.narayan@transformsolution.net"
 ]
 
 
@@ -59,11 +59,11 @@ def fetch_data():
 
     try:
 
-        today = datetime.now().date()
-        report_date = today - timedelta(days=1)
+        # today = datetime.now().date()
+        # report_date = today - timedelta(days=1)
 
         # TEST DATE
-        # report_date = datetime.strptime("2026-03-02", "%Y-%m-%d").date()
+        report_date = datetime.strptime("2026-03-06", "%Y-%m-%d").date()
         
         report_month = report_date.strftime("%b%Y").upper()
 
@@ -218,12 +218,12 @@ def fetch_data():
 
             cursor.execute(
                 f"""
-                SELECT user_id, AVG(qc_score) AS avg_qc
-                FROM temp_qc
-                WHERE qc_score IS NOT NULL
-                AND DATE(date) BETWEEN %s AND %s
-                AND user_id IN ({in_ph})
-                GROUP BY user_id
+                    SELECT user_id, AVG(qc_score) AS avg_qc
+                    FROM temp_qc
+                    WHERE qc_score IS NOT NULL
+                    AND DATE(date) BETWEEN %s AND %s
+                    AND user_id IN ({in_ph})
+                    GROUP BY user_id
                 """,
                 [month_start, latest_qc_date] + user_ids,
             )
@@ -270,7 +270,7 @@ def fetch_data():
             if qc_date and isinstance(qc_date, datetime):
                 qc_date = qc_date.strftime("%Y-%m-%d")
 
-            avg_qc = avg_qc_map.get(uid, 0)
+            avg_qc = avg_qc_map.get(uid)
             assigned = assigned_map.get(uid, 0)
 
             monthly_target = float(u["monthly_target"])
@@ -357,6 +357,14 @@ def generate_html(report_date, data_rows):
     for u in data_rows:
         team = u.get("team_name") or "No Team"
         teams[team].append(u)
+        
+    # GRAND TOTAL VARIABLES
+    grand_assigned = 0
+    grand_worked = 0
+    grand_required = 0
+    grand_mtd = 0
+    grand_goal = 0
+    grand_pending = 0
 
     for team, members in teams.items():
 
@@ -376,6 +384,14 @@ def generate_html(report_date, data_rows):
         team_mtd = 0
         team_goal = 0
         team_pending = 0
+        
+        # GRAND TOTAL VARIABLES
+        grand_assigned = 0
+        grand_worked = 0
+        grand_required = 0
+        grand_mtd = 0
+        grand_goal = 0
+        grand_pending = 0
 
         for u in members:
 
@@ -417,6 +433,20 @@ def generate_html(report_date, data_rows):
         <td align="right">{team_mtd:.2f}</td>
         <td align="right">{team_goal:.2f}</td>
         <td align="right">{team_pending:.2f}</td>
+        <td></td>
+        </tr>
+        """
+        
+        html += f"""
+        <tr style="font-weight:bold;background:#A4C2F4">
+        <td>Grand Total</td>
+        <td align="right">{grand_assigned:.2f}</td>
+        <td align="right">{grand_worked:.2f}</td>
+        <td></td>
+        <td align="right">{grand_required:.2f}</td>
+        <td align="right">{grand_mtd:.2f}</td>
+        <td align="right">{grand_goal:.2f}</td>
+        <td align="right">{grand_pending:.2f}</td>
         <td></td>
         </tr>
         """
