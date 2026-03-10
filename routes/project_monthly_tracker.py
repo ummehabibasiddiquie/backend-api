@@ -298,17 +298,14 @@ def list_project_monthly_tracker():
     twt_params = []
     where_twt = "WHERE twt.is_active=1"
 
-    # keep achieved aligned with list filters
     if data.get("project_id"):
         where_twt += " AND twt.project_id=%s"
         twt_params.append(int(data["project_id"]))
 
     if data.get("month_year"):
-        # month_year match using DATE_FORMAT -> "Feb2026"
         where_twt += " AND DATE_FORMAT(twt.date_time, '%b%Y')=%s"
         twt_params.append(str(data["month_year"]).strip())
 
-    # optional filters (use if your UI sends them)
     if data.get("task_id"):
         where_twt += " AND twt.task_id=%s"
         twt_params.append(int(data["task_id"]))
@@ -317,8 +314,6 @@ def list_project_monthly_tracker():
         where_twt += " AND twt.user_id=%s"
         twt_params.append(int(data["user_id"]))
 
-    # date range filters
-    # send: "date_from": "2026-02-01", "date_to": "2026-02-29"
     if data.get("date_from"):
         where_twt += " AND twt.date_time >= %s"
         twt_params.append(str(data["date_from"]).strip() + " 00:00:00")
@@ -342,11 +337,19 @@ def list_project_monthly_tracker():
                 pmt.month_year,
                 pmt.monthly_target,
 
+                -- Original achieved/pending based on actual_billable_hours
                 COALESCE(twt_sum.achieved_hours, 0) AS achieved_hours,
                 (
                     COALESCE(CAST(pmt.monthly_target AS DECIMAL(12,2)), 0)
                     - COALESCE(twt_sum.achieved_hours, 0)
                 ) AS pending_hours,
+
+                -- NEW: achieved/pending based on billable_hours
+                COALESCE(twt_sum.tenure_achieved_hours, 0) AS tenure_achieved_hours,
+                (
+                    COALESCE(CAST(pmt.monthly_target AS DECIMAL(12,2)), 0)
+                    - COALESCE(twt_sum.tenure_achieved_hours, 0)
+                ) AS tenure_pending_hours,
 
                 pmt.created_date,
                 pmt.is_active
@@ -357,13 +360,22 @@ def list_project_monthly_tracker():
                 SELECT
                     twt.project_id,
                     DATE_FORMAT(twt.date_time, '%b%Y') AS month_year,
+                    -- existing logic
                     SUM(
                         CASE
                             WHEN twt.actual_billable_hours REGEXP '^[0-9]+(\\.[0-9]+)?$'
                             THEN CAST(twt.actual_billable_hours AS DECIMAL(12,2))
                             ELSE 0
                         END
-                    ) AS achieved_hours
+                    ) AS achieved_hours,
+                    -- NEW: sum based on billable_hours
+                    SUM(
+                        CASE
+                            WHEN twt.billable_hours REGEXP '^[0-9]+(\\.[0-9]+)?$'
+                            THEN CAST(twt.billable_hours AS DECIMAL(12,2))
+                            ELSE 0
+                        END
+                    ) AS tenure_achieved_hours
                 FROM task_work_tracker twt
                 {where_twt}
                 GROUP BY twt.project_id, DATE_FORMAT(twt.date_time, '%b%Y')
@@ -376,7 +388,6 @@ def list_project_monthly_tracker():
             LIMIT %s OFFSET %s
         """
 
-        # IMPORTANT: twt params come first because the subquery appears first in SQL
         cursor.execute(query, tuple(twt_params + pmt_params + [limit, offset]))
         rows = cursor.fetchall()
 
