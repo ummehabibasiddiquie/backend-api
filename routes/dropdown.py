@@ -192,25 +192,91 @@ def get():
                         item["label"] = item["label"].title()
                 return api_response(200, "Dropdown data fetched successfully", result)
             elif dropdown_type == "agent":
-                # Return all agents
-                query = """
-                    SELECT
-                        u.user_id,
-                        u.user_name AS label
-                    FROM tfs_user u
-                    JOIN user_role r ON r.role_id = u.role_id
-                    WHERE u.is_active = 1
-                      AND u.is_delete = 1
-                      AND r.is_active = 1
-                      AND LOWER(r.role_name) = %s
-                    ORDER BY u.user_name
-                """
-                params = (dropdown_type,)
+
+                logged_in_user_id = data.get("logged_in_user_id")
+
+                if not logged_in_user_id:
+                    return api_response(400, "logged_in_user_id is required")
+
+                user_role = get_user_role(cursor, logged_in_user_id)
+
+                # ---------------- ADMIN / SUPER ADMIN ---------------- #
+                if user_role in ["admin", "super admin"]:
+                    query = """
+                        SELECT
+                            u.user_id,
+                            u.user_name AS label
+                        FROM tfs_user u
+                        JOIN user_role r ON r.role_id = u.role_id
+                        WHERE u.is_active = 1
+                        AND u.is_delete = 1
+                        AND r.is_active = 1
+                        AND LOWER(r.role_name) = 'agent'
+                        ORDER BY u.user_name
+                    """
+                    params = ()
+
+                # ---------------- PROJECT MANAGER ---------------- #
+                elif user_role in ["project manager", "manager"]:
+                    query = """
+                        SELECT
+                            u.user_id,
+                            u.user_name AS label
+                        FROM tfs_user u
+                        JOIN user_role r ON r.role_id = u.role_id
+                        WHERE u.is_active = 1
+                        AND u.is_delete = 1
+                        AND r.is_active = 1
+                        AND LOWER(r.role_name) = 'agent'
+                        AND u.project_manager_id = %s
+                        ORDER BY u.user_name
+                    """
+                    params = (logged_in_user_id,)
+
+                # ---------------- ASSISTANT MANAGER ---------------- #
+                elif user_role == "assistant manager":
+                    query = """
+                        SELECT
+                            u.user_id,
+                            u.user_name AS label
+                        FROM tfs_user u
+                        JOIN user_role r ON r.role_id = u.role_id
+                        WHERE u.is_active = 1
+                        AND u.is_delete = 1
+                        AND r.is_active = 1
+                        AND LOWER(r.role_name) = 'agent'
+                        AND u.asst_manager_id = %s
+                        ORDER BY u.user_name
+                    """
+                    params = (logged_in_user_id,)
+
+                # ---------------- QA ---------------- #
+                elif user_role == "qa":
+                    query = """
+                        SELECT
+                            u.user_id,
+                            u.user_name AS label
+                        FROM tfs_user u
+                        JOIN user_role r ON r.role_id = u.role_id
+                        WHERE u.is_active = 1
+                        AND u.is_delete = 1
+                        AND r.is_active = 1
+                        AND LOWER(r.role_name) = 'agent'
+                        AND u.qa_id = %s
+                        ORDER BY u.user_name
+                    """
+                    params = (logged_in_user_id,)
+
+                else:
+                    return api_response(403, "You are not allowed to view agents")
+
                 cursor.execute(query, params)
                 result = cursor.fetchall()
+
                 for item in result:
                     if item.get("label"):
                         item["label"] = item["label"].title()
+
                 return api_response(200, "Dropdown data fetched successfully", result)
             else:
                 # All other roles
