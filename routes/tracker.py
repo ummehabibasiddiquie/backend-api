@@ -558,22 +558,28 @@ def view_trackers():
 
             params.extend(user_ids_filter)
         elif role_name not in ("admin", "super admin"):
-            manager_id_str = str(logged_in_user_id)
-            query += """
+            manager_id = str(logged_in_user_id)
+
+            clean_pm = "REPLACE(REPLACE(REPLACE(REPLACE(tu.project_manager_id,'[',''),']',''),'\"',''),' ','')"
+            clean_am = "REPLACE(REPLACE(REPLACE(REPLACE(tu.asst_manager_id,'[',''),']',''),'\"',''),' ','')"
+            clean_qa = "REPLACE(REPLACE(REPLACE(REPLACE(tu.qa_id,'[',''),']',''),'\"',''),' ','')"
+
+            query += f"""
                 AND twt.user_id IN (
                     SELECT tu.user_id
                     FROM tfs_user tu
-                    WHERE tu.is_active = 1 AND tu.is_delete = 1
+                    WHERE tu.is_active = 1
+                    AND tu.is_delete = 1
                     AND (
-                        tu.project_manager_id=%s OR tu.asst_manager_id=%s OR tu.qa_id=%s
-                        OR tu.user_id=%s
-                        OR JSON_CONTAINS(tu.project_manager_id, JSON_ARRAY(%s))
-                        OR JSON_CONTAINS(tu.asst_manager_id, JSON_ARRAY(%s))
-                        OR JSON_CONTAINS(tu.qa_id, JSON_ARRAY(%s))
+                        FIND_IN_SET(%s, {clean_pm})
+                        OR FIND_IN_SET(%s, {clean_am})
+                        OR FIND_IN_SET(%s, {clean_qa})
+                        OR tu.user_id = %s
                     )
                 )
             """
-            params.extend([manager_id_str]*7)
+
+            params.extend([manager_id, manager_id, manager_id, manager_id])
 
         if data.get("project_id"):
             query += " AND twt.project_id=%s"
