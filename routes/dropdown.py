@@ -200,12 +200,14 @@ def get():
 
                 user_role = get_user_role(cursor, logged_in_user_id)
 
+                clean_pm = "REPLACE(REPLACE(REPLACE(REPLACE(u.project_manager_id,'[',''),']',''), '\"',''),' ','')"
+                clean_am = "REPLACE(REPLACE(REPLACE(REPLACE(u.asst_manager_id,'[',''),']',''), '\"',''),' ','')"
+                clean_qa = "REPLACE(REPLACE(REPLACE(REPLACE(u.qa_id,'[',''),']',''), '\"',''),' ','')"
+
                 # ---------------- ADMIN / SUPER ADMIN ---------------- #
                 if user_role in ["admin", "super admin"]:
                     query = """
-                        SELECT
-                            u.user_id,
-                            u.user_name AS label
+                        SELECT u.user_id, u.user_name AS label
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
                         WHERE u.is_active = 1
@@ -218,57 +220,51 @@ def get():
 
                 # ---------------- PROJECT MANAGER ---------------- #
                 elif user_role in ["project manager", "manager"]:
-                    query = """
-                        SELECT
-                            u.user_id,
-                            u.user_name AS label
+                    query = f"""
+                        SELECT u.user_id, u.user_name AS label
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
                         WHERE u.is_active = 1
                         AND u.is_delete = 1
                         AND r.is_active = 1
                         AND LOWER(r.role_name) = 'agent'
-                        AND u.project_manager_id = %s
+                        AND FIND_IN_SET(%s, {clean_pm})
                         ORDER BY u.user_name
                     """
                     params = (logged_in_user_id,)
 
                 # ---------------- ASSISTANT MANAGER ---------------- #
                 elif user_role == "assistant manager":
-                    query = """
-                        SELECT
-                            u.user_id,
-                            u.user_name AS label
+                    query = f"""
+                        SELECT u.user_id, u.user_name AS label
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
                         WHERE u.is_active = 1
                         AND u.is_delete = 1
                         AND r.is_active = 1
                         AND LOWER(r.role_name) = 'agent'
-                        AND u.asst_manager_id = %s
+                        AND FIND_IN_SET(%s, {clean_am})
                         ORDER BY u.user_name
                     """
                     params = (logged_in_user_id,)
 
                 # ---------------- QA ---------------- #
                 elif user_role == "qa":
-                    query = """
-                        SELECT
-                            u.user_id,
-                            u.user_name AS label
+                    query = f"""
+                        SELECT u.user_id, u.user_name AS label
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
                         WHERE u.is_active = 1
                         AND u.is_delete = 1
                         AND r.is_active = 1
                         AND LOWER(r.role_name) = 'agent'
-                        AND u.qa_id = %s
+                        AND FIND_IN_SET(%s, {clean_qa})
                         ORDER BY u.user_name
                     """
                     params = (logged_in_user_id,)
 
                 else:
-                    return api_response(403, "You are not allowed to view agents")
+                    return api_response(403, "Not allowed")
 
                 cursor.execute(query, params)
                 result = cursor.fetchall()
