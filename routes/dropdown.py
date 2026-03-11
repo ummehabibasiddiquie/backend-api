@@ -194,6 +194,8 @@ def get():
             elif dropdown_type == "agent":
 
                 logged_in_user_id = data.get("logged_in_user_id")
+                team_id = data.get("team_id")
+                clean_team = "REPLACE(REPLACE(REPLACE(REPLACE(u.team_id,'[',''),']',''), '\"',''),' ','')"
 
                 if not logged_in_user_id:
                     return api_response(400, "logged_in_user_id is required")
@@ -206,7 +208,7 @@ def get():
 
                 # ---------------- ADMIN / SUPER ADMIN ---------------- #
                 if user_role in ["admin", "super admin"]:
-                    query = """
+                    query = f"""
                         SELECT u.user_id, u.user_name AS label
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
@@ -214,9 +216,15 @@ def get():
                         AND u.is_delete = 1
                         AND r.is_active = 1
                         AND LOWER(r.role_name) = 'agent'
-                        ORDER BY u.user_name
                     """
-                    params = ()
+
+                    params = []
+
+                    if team_id:
+                        query += f" AND FIND_IN_SET(%s, {clean_team})"
+                        params.append(team_id)
+
+                    query += " ORDER BY u.user_name"
 
                 # ---------------- PROJECT MANAGER ---------------- #
                 elif user_role in ["project manager", "manager"]:
@@ -229,9 +237,15 @@ def get():
                         AND r.is_active = 1
                         AND LOWER(r.role_name) = 'agent'
                         AND FIND_IN_SET(%s, {clean_pm})
-                        ORDER BY u.user_name
                     """
-                    params = (logged_in_user_id,)
+
+                    params = [logged_in_user_id]
+
+                    if team_id:
+                        query += f" AND FIND_IN_SET(%s, {clean_team})"
+                        params.append(team_id)
+
+                    query += " ORDER BY u.user_name"
 
                 # ---------------- ASSISTANT MANAGER ---------------- #
                 elif user_role == "assistant manager":
