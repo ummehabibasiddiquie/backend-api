@@ -559,6 +559,7 @@ def view_trackers():
             params.extend(user_ids_filter)
         elif role_name not in ("admin", "super admin"):
             manager_id = str(logged_in_user_id)
+            
 
             clean_pm = "REPLACE(REPLACE(REPLACE(REPLACE(tu.project_manager_id,'[',''),']',''),'\"',''),' ','')"
             clean_am = "REPLACE(REPLACE(REPLACE(REPLACE(tu.asst_manager_id,'[',''),']',''),'\"',''),' ','')"
