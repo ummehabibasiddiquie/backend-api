@@ -526,7 +526,10 @@ def view_trackers():
             (twt.production / NULLIF(twt.tenure_target, 0)) AS billable_hours
         FROM task_work_tracker twt
         LEFT JOIN tfs_user u ON u.user_id = twt.user_id
-        LEFT JOIN tfs_user am ON (u.asst_manager_id = am.user_id OR JSON_CONTAINS(u.asst_manager_id, CONCAT('[', am.user_id, ']')))
+        LEFT JOIN tfs_user am ON (
+            u.asst_manager_id = am.user_id OR 
+            (u.asst_manager_id IS NOT NULL AND JSON_VALID(u.asst_manager_id) AND JSON_CONTAINS(u.asst_manager_id, CONCAT('[', am.user_id, ']')))
+        )
         LEFT JOIN project p ON p.project_id = twt.project_id
         LEFT JOIN task tk ON tk.task_id = twt.task_id
         LEFT JOIN team t ON u.team_id = t.team_id
