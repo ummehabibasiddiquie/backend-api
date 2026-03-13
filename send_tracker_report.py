@@ -24,13 +24,13 @@ RECIPIENTS = [
     "sriman.narayan@transformsolution.net",
     "shirin.gafoor@transformsolution.net",
     "avinash.dwivedi@transformsolution.net",
-    "dhruv.mevada@transformsolution.net",
     "jimil.kinariwala@transformsolution.net",
     "manas.pradhan@transformsolution.net"
 ]
 
 CC_RECIPIENTS = [
-    "ashfaq@transformsolution.com"
+    "ashfaq@transformsolution.com",
+    "seema@transformsolution.com"
 ]
 # -------------------------------
 # DATABASE CONNECTION
