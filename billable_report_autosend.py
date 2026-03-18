@@ -70,8 +70,13 @@ def fetch_data():
     cursor = conn.cursor(dictionary=True)
 
     try:
+        
         today = datetime.now().date()
         report_date = today - timedelta(days=1)
+
+        # TEST DATE
+        report_date = datetime.strptime("2026-03-17", "%Y-%m-%d").date()
+        
         report_month = report_date.strftime("%b%Y").upper()
 
         logging.info(f"Fetching data for {report_date}")
