@@ -18,9 +18,9 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 RECIPIENTS = [
     "ummehabiba.siddiquie@transformsolution.net",
-    "mohsin.pathan@transformsolution.net",
-    "dharmesh.jotania@transformsolution.net",
-    "venkateshwaran.iyer@transformsolution.net",
+    # "mohsin.pathan@transformsolution.net",
+    # "dharmesh.jotania@transformsolution.net",
+    # "venkateshwaran.iyer@transformsolution.net",
     # "yahya.irani@transformsolution.net",
     # "amit.mandviwala@transformsolution.net",
     # "sriman.narayan@transformsolution.net",
@@ -70,16 +70,15 @@ def fetch_data():
     cursor = conn.cursor(dictionary=True)
 
     try:
-        
         today = datetime.now().date()
         report_date = today - timedelta(days=1)
-
+        
         # TEST DATE
         report_date = datetime.strptime("2026-03-17", "%Y-%m-%d").date()
         
         report_month = report_date.strftime("%b%Y").upper()
 
-        logging.info(f"Fetching data for {report_date}")
+        logging.info(f"Fetching data for report date {report_date}")
 
         # -------------------------
         # USERS
@@ -115,7 +114,7 @@ def fetch_data():
         month_start = report_date.replace(day=1)
 
         # -------------------------
-        # DAILY HOURS (Presence)
+        # DAILY HOURS (PRESENCE)
         # -------------------------
         cursor.execute(
             f"""
@@ -148,7 +147,7 @@ def fetch_data():
         if not users:
             return report_date, []
 
-        # rebuild ids after filtering
+        # rebuild after filter
         user_ids = [u["user_id"] for u in users]
         in_ph = ",".join(["%s"] * len(user_ids))
 
@@ -191,50 +190,7 @@ def fetch_data():
         }
 
         # -------------------------
-        # QC DATA
-        # -------------------------
-        cursor.execute(
-            """
-            SELECT MAX(DATE(date)) AS latest_qc_date
-            FROM temp_qc
-            WHERE qc_score IS NOT NULL AND DATE(date) < %s
-            """,
-            (report_date,)
-        )
-
-        latest_qc_date = cursor.fetchone()["latest_qc_date"]
-        qc_map = {}
-        avg_qc_map = {}
-
-        if latest_qc_date:
-            cursor.execute(
-                f"""
-                SELECT user_id, qc_score, DATE(date) AS qc_date
-                FROM temp_qc
-                WHERE DATE(date) = %s
-                AND user_id IN ({in_ph})
-                """,
-                [latest_qc_date] + user_ids,
-            )
-            qc_map = {r["user_id"]: r for r in cursor.fetchall()}
-
-            cursor.execute(
-                f"""
-                SELECT user_id, AVG(qc_score) AS avg_qc
-                FROM temp_qc
-                WHERE DATE(date) BETWEEN %s AND %s
-                AND user_id IN ({in_ph})
-                GROUP BY user_id
-                """,
-                [month_start, latest_qc_date] + user_ids,
-            )
-            avg_qc_map = {
-                r["user_id"]: float(r["avg_qc"] or 0)
-                for r in cursor.fetchall()
-            }
-
-        # -------------------------
-        # ASSIGNED HOURS
+        # QC + ASSIGNED
         # -------------------------
         cursor.execute(
             f"""
@@ -255,11 +211,13 @@ def fetch_data():
         # CALCULATIONS
         # -------------------------
         for u in users:
+
             uid = u["user_id"]
 
             worked = daily_map.get(uid, 0)
             mtd = mtd_map.get(uid, 0)
 
+            # FIXED assigned logic
             if is_team_agent(u):
                 assigned = 0
             else:
@@ -272,15 +230,10 @@ def fetch_data():
             remaining_days = max(0, float(u["working_days"]) - days_worked)
             daily_required = pending / remaining_days if remaining_days else 0
 
-            qc_data = qc_map.get(uid, {})
-
             u.update({
                 "daily_worked_hours": worked,
                 "mtd_hours": mtd,
                 "assigned_hours": assigned,
-                "qc_score": qc_data.get("qc_score"),
-                "qc_date": qc_data.get("qc_date"),
-                "avg_qc_score": avg_qc_map.get(uid),
                 "monthly_goal": monthly_goal,
                 "pending_goal": pending,
                 "daily_required_hours": daily_required,
@@ -340,3 +293,51 @@ def generate_html(report_date, data_rows):
     html += "</table>"
 
     return html
+
+# -------------------------------
+# SEND EMAIL
+# -------------------------------
+def send_email(report_date, html_body):
+
+    host = os.getenv("SMTP_HOST")
+    port = int(os.getenv("SMTP_PORT", 587))
+    user = os.getenv("SMTP_USER")
+    password = os.getenv("SMTP_PASS")
+
+    msg = MIMEMultipart("alternative")
+
+    msg["From"] = user
+    msg["To"] = ", ".join(RECIPIENTS)
+    msg["Cc"] = ", ".join(CC_RECIPIENTS)
+    msg["Subject"] = f"Delivered billable hours on {report_date.strftime('%d %B %Y')}"
+
+    msg.attach(MIMEText(html_body, "html"))
+
+    all_recipients = RECIPIENTS + CC_RECIPIENTS
+
+    with smtplib.SMTP(host, port) as server:
+        server.starttls()
+        server.login(user, password)
+        server.sendmail(user, all_recipients, msg.as_string())
+
+# -------------------------------
+# MAIN
+# -------------------------------
+if __name__ == "__main__":
+
+    try:
+        report_date, data = fetch_data()
+
+        if not data:
+            logging.info("No data found")
+            exit()
+
+        html = generate_html(report_date, data)
+
+        send_email(report_date, html)
+
+        logging.info("Report sent successfully")
+
+    except Exception as e:
+        print("Error:", str(e))
+        logging.exception(f"Report failed: {str(e)}")
