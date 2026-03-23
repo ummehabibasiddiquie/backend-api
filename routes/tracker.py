@@ -486,16 +486,9 @@ def view_trackers():
         if not logged_in_user_id:
             return api_response(400, "logged_in_user_id is required")
 
-        # month_year default current month
-        # month_year = normalize_month_year(data.get("month_year"))
-        # if not month_year:
-        #     cursor.execute("SELECT DATE_FORMAT(CURDATE(), '%b%Y') AS m")
-        #     month_year = normalize_month_year((cursor.fetchone() or {}).get("m") or "")
-
         # ---------- Smart Month Detection ----------
         month_year = None
 
-        # 1️⃣ If date filter exists → derive month from date_to OR date_from
         if data.get("date_from") or data.get("date_to"):
             try:
                 ref_date = data.get("date_to") or data.get("date_from")
@@ -504,11 +497,9 @@ def view_trackers():
             except Exception:
                 month_year = None
 
-        # 2️⃣ Else use explicit month_year
         if not month_year:
             month_year = normalize_month_year(data.get("month_year"))
 
-        # 3️⃣ Else fallback to current month
         if not month_year:
             cursor.execute("SELECT DATE_FORMAT(CURDATE(), '%b%Y') AS m")
             month_year = normalize_month_year((cursor.fetchone() or {}).get("m") or "")
@@ -536,7 +527,6 @@ def view_trackers():
         WHERE twt.is_active != 0
         """
 
-        # month filter
         try:
             dt = datetime.strptime(month_year, "%b%Y")
             query += " AND YEAR(CAST(twt.date_time AS DATETIME)) = %s AND MONTH(CAST(twt.date_time AS DATETIME)) = %s"
@@ -544,7 +534,6 @@ def view_trackers():
         except Exception:
             pass
         
-        # Dynamic filters
         if data.get("team_id"):
             query += " AND u.team_id=%s"
             params.append(data["team_id"])
@@ -552,7 +541,6 @@ def view_trackers():
         if data.get("user_id"):
             user_ids_filter = data["user_id"]
 
-            # if single value convert to list
             if not isinstance(user_ids_filter, list):
                 user_ids_filter = [user_ids_filter]
 
@@ -560,9 +548,9 @@ def view_trackers():
             query += f" AND twt.user_id IN ({placeholders})"
 
             params.extend(user_ids_filter)
+
         elif role_name not in ("admin", "super admin"):
             manager_id = str(logged_in_user_id)
-            
 
             clean_pm = "REPLACE(REPLACE(REPLACE(REPLACE(tu.project_manager_id,'[',''),']',''),'\"',''),' ','')"
             clean_am = "REPLACE(REPLACE(REPLACE(REPLACE(tu.asst_manager_id,'[',''),']',''),'\"',''),' ','')"
@@ -623,9 +611,9 @@ def view_trackers():
             tracker_file_temp = t.get("tracker_file")
             t["tracker_file"] = (tracker_files_url + tracker_file_temp) if tracker_file_temp else None
 
-        # Month-wise summary (your logic, but 
-        # month_year is normalized now)
-        
+        # -----------------------------
+        # Month-wise summary
+        # -----------------------------
         month_summary = []
         user_ids = sorted({t["user_id"] for t in trackers if t.get("user_id")})
         
@@ -658,42 +646,48 @@ def view_trackers():
             cursor.execute(summary_query, tuple(summary_params))
             month_summary = cursor.fetchall()
 
-            # -----------------------------
+        # -----------------------------
         # Totals
         # -----------------------------
-        # Total assigned hours from temp_qc
-        assigned_query = "SELECT COALESCE(SUM(assigned_hours),0) AS total_assigned FROM temp_qc WHERE 1=1"
+        assigned_query = """
+            SELECT COALESCE(SUM(assigned_hours), 0) AS total_assigned
+            FROM temp_qc
+            WHERE 1=1
+        """
         assigned_params = []
 
-        if user_ids:
-            in_ph = ",".join(["%s"]*len(user_ids))
-            assigned_query += f" AND user_id IN ({in_ph})"
-            assigned_params.extend(user_ids)
+        # 🔥 get exact users + dates from trackers
+        tracker_user_ids = sorted({t["user_id"] for t in trackers if t.get("user_id")})
+        tracker_dates = sorted({str(t["date_time"])[:10] for t in trackers if t.get("date_time")})
 
-        if data.get("date_from") and data.get("date_to"):
-            assigned_query += " AND DATE(date) BETWEEN %s AND %s"
-            assigned_params.extend([data["date_from"], data["date_to"]])
+        if tracker_user_ids:
+            in_ph = ",".join(["%s"] * len(tracker_user_ids))
+            assigned_query += f" AND user_id IN ({in_ph})"
+            assigned_params.extend(tracker_user_ids)
+
+        if tracker_dates:
+            in_ph = ",".join(["%s"] * len(tracker_dates))
+            assigned_query += f" AND DATE(date) IN ({in_ph})"
+            assigned_params.extend(tracker_dates)
 
         cursor.execute(assigned_query, tuple(assigned_params))
         total_assigned_hours = float((cursor.fetchone() or {}).get("total_assigned") or 0)
 
-        
         totals = {
             "total_tenure_target": round(sum(float(t.get("tenure_target") or 0) for t in trackers), 2),
-
             "total_billable_hours": round(sum(float(t.get("billable_hours") or 0) for t in trackers), 2),
-
             "total_production": round(sum(float(t.get("production") or 0) for t in trackers), 2),
-
             "total_assigned_hours": round(total_assigned_hours, 2),
-
             "total_active_agents": len(set(t["user_id"] for t in trackers if t.get("user_id")))
         }
 
-        # -----------------------------
-        # Log API call
-        # -----------------------------
-        log_api_call("view_trackers", logged_in_user_id, data.get("device_id"), data.get("device_type"), datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        log_api_call(
+            "view_trackers",
+            logged_in_user_id,
+            data.get("device_id"),
+            data.get("device_type"),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
 
         return api_response(
             200,
@@ -713,24 +707,6 @@ def view_trackers():
     finally:
         cursor.close()
         conn.close()
-
-
-def normalize_month_year(val):
-    """
-    Accepts: Jan2026 / jan2026 / JAN2026
-    Returns: Jan2026
-    """
-    if not val:
-        return None
-    s = str(val).strip()
-    if not s:
-        return None
-    try:
-        dt = datetime.strptime(s.title(), "%b%Y")
-        return dt.strftime("%b%Y")
-    except Exception:
-        return None
-
 
 def cleaned_csv_col(col_name: str) -> str:
     """
