@@ -798,7 +798,7 @@ def view_daily_trackers():
 
                 -- QC data from separate tables
                 # qr.qc_score AS qc_score,
-                tqc.qc_score AS qc_score
+                tqc.qc_score AS qc_score,
                 tqc.assigned_hours AS assigned_hours,
 
                 umt.user_monthly_tracker_id,
