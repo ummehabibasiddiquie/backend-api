@@ -483,7 +483,7 @@ def view_trackers():
             query += f" AND twt.user_id IN ({placeholders})"
 
             params.extend(user_ids_filter)
-        elif role_name not in ("admin", "super admin"):
+        elif role_name not in ("admin", "super admin", "project manager","assistant manager","qa"):
             manager_id_str = str(logged_in_user_id)
             query += """
                 AND twt.user_id IN (
@@ -735,7 +735,7 @@ def view_daily_trackers():
             where += " AND twt.user_id=%s"
             params.append(data["user_id"])
         else:
-            if "admin" not in role_name:
+            if "admin" not in role_name and "project manager" not in role_name and "assistant manager" not in role_name and "qa" not in role_name:
                 manager_id = str(logged_in_user_id)
                 where += f"""
                     AND twt.user_id IN (
