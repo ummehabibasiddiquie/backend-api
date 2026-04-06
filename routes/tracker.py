@@ -797,7 +797,8 @@ def view_daily_trackers():
                     AS cumulative_billable_hours_till_day,
 
                 -- QC data from separate tables
-                qr.qc_score AS qc_score,
+                # qr.qc_score AS qc_score,
+                tqc.qc_score AS qc_score
                 tqc.assigned_hours AS assigned_hours,
 
                 umt.user_monthly_tracker_id,
@@ -1000,7 +1001,7 @@ def view_daily_trackers():
                 "month_year": month_year,
                 "trackers": rows,        # daily aggregated rows
                 "month_summary": month_summary  # ✅ now included + team info + team filter
-            },
+            }
         )
 
     except Exception as e:
