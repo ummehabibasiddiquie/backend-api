@@ -49,7 +49,7 @@ def get_role_context(cursor, user_id: int) -> dict:
             ) AS agent_role_id
         FROM tfs_user u
         JOIN user_role r ON r.role_id = u.role_id
-        WHERE u.user_id=%s AND u.is_active=1 AND u.is_delete=1
+        WHERE u.user_id=%s AND u.is_delete=1
         """,
         (int(user_id),),
     )
@@ -486,25 +486,6 @@ def view_trackers():
         if not logged_in_user_id:
             return api_response(400, "logged_in_user_id is required")
 
-        # ---------- Smart Month Detection ----------
-        month_year = None
-
-        if data.get("date_from") or data.get("date_to"):
-            try:
-                ref_date = data.get("date_to") or data.get("date_from")
-                dt_obj = datetime.strptime(str(ref_date)[:10], "%Y-%m-%d")
-                month_year = dt_obj.strftime("%b%Y")
-            except Exception:
-                month_year = None
-
-        if not month_year:
-            month_year = normalize_month_year(data.get("month_year"))
-
-        if not month_year:
-            cursor.execute("SELECT DATE_FORMAT(CURDATE(), '%b%Y') AS m")
-            month_year = normalize_month_year((cursor.fetchone() or {}).get("m") or "")
-        
-        
         ctx = get_role_context(cursor, int(logged_in_user_id))
         role_name = ctx["user_role_name"]
 
@@ -527,13 +508,6 @@ def view_trackers():
         WHERE twt.is_active != 0
         """
 
-        try:
-            dt = datetime.strptime(month_year, "%b%Y")
-            query += " AND YEAR(CAST(twt.date_time AS DATETIME)) = %s AND MONTH(CAST(twt.date_time AS DATETIME)) = %s"
-            params.extend([dt.year, dt.month])
-        except Exception:
-            pass
-        
         if data.get("team_id"):
             query += " AND u.team_id=%s"
             params.append(data["team_id"])
@@ -560,8 +534,7 @@ def view_trackers():
                 AND twt.user_id IN (
                     SELECT tu.user_id
                     FROM tfs_user tu
-                    WHERE tu.is_active = 1
-                    AND tu.is_delete = 1
+                    WHERE tu.is_delete = 1
                     AND (
                         FIND_IN_SET(%s, {clean_pm})
                         OR FIND_IN_SET(%s, {clean_am})
@@ -580,7 +553,7 @@ def view_trackers():
         if data.get("task_id"):
             query += " AND twt.task_id=%s"
             params.append(data["task_id"])
-            
+
         if data.get("shift"):
             query += " AND twt.shift = %s"
             params.append(data["shift"].upper())
@@ -611,44 +584,6 @@ def view_trackers():
             tracker_file_temp = t.get("tracker_file")
             t["tracker_file"] = (tracker_files_url + tracker_file_temp) if tracker_file_temp else None
 
-        # -----------------------------
-        # Month-wise summary
-        # -----------------------------
-        month_summary = []
-        user_ids = sorted({t["user_id"] for t in trackers if t.get("user_id")})
-        
-        if user_ids:
-            in_ph = ",".join(["%s"]*len(user_ids))
-
-            summary_query = f"""
-                SELECT 
-                u.user_id,
-                u.user_name,
-                u.user_email,
-                m.mon AS month_year,
-                umt.user_monthly_tracker_id,
-                COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)),0) AS monthly_target,
-                COALESCE(umt.extra_assigned_hours,0) AS extra_assigned_hours,
-                (
-                    COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)),0)
-                    + COALESCE(umt.extra_assigned_hours,0)
-                ) AS monthly_total_target
-            FROM tfs_user u
-            CROSS JOIN (SELECT %s AS mon) m
-            LEFT JOIN user_monthly_tracker umt
-                ON umt.user_id = u.user_id
-                AND umt.is_active = 1
-                AND umt.month_year = m.mon
-            WHERE u.user_id IN ({in_ph})
-            """
-
-            summary_params = [month_year] + user_ids
-            cursor.execute(summary_query, tuple(summary_params))
-            month_summary = cursor.fetchall()
-
-        # -----------------------------
-        # Totals
-        # -----------------------------
         assigned_query = """
             SELECT COALESCE(SUM(assigned_hours), 0) AS total_assigned
             FROM temp_qc
@@ -656,7 +591,6 @@ def view_trackers():
         """
         assigned_params = []
 
-        # 🔥 get exact users + dates from trackers
         tracker_user_ids = sorted({t["user_id"] for t in trackers if t.get("user_id")})
         tracker_dates = sorted({str(t["date_time"])[:10] for t in trackers if t.get("date_time")})
 
@@ -694,12 +628,9 @@ def view_trackers():
             "Trackers fetched successfully",
             {
                 "count": len(trackers),
-                "month_year": month_year,
                 "trackers": trackers,
-                "month_summary": month_summary,
                 "totals": totals
-            }
-        )
+            })
 
     except Exception as e:
         return api_response(500, f"Failed to fetch trackers: {str(e)}")
@@ -707,13 +638,6 @@ def view_trackers():
     finally:
         cursor.close()
         conn.close()
-
-def cleaned_csv_col(col_name: str) -> str:
-    """
-    For columns that store CSV-like ids e.g. "[111, 113]"
-    Makes it "111,113" so FIND_IN_SET works.
-    """
-    return f"REPLACE(REPLACE(REPLACE({col_name}, '[', ''), ']', ''), ' ', '')"
 
 
 @tracker_bp.route("/view_daily", methods=["POST"])
@@ -834,8 +758,7 @@ def view_daily_trackers():
                     AND twt.user_id IN (
                         SELECT tu.user_id
                         FROM tfs_user tu
-                        WHERE tu.is_active = 1
-                          AND tu.is_delete = 1
+                        WHERE tu.is_delete = 1
                           AND (
                                 tu.project_manager_id = %s
                                 OR tu.asst_manager_id = %s
