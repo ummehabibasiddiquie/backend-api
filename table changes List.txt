@@ -1,0 +1,25 @@
+ALTER TABLE `task_work_tracker` ADD `tracker_note` LONGTEXT NULL AFTER `tracker_file`;
+
+ALTER TABLE `project` ADD `project_category_id` INT NOT NULL AFTER `project_id`;
+ALTER TABLE `project_category` ADD `afd_id` INT NOT NULL AFTER `project_category_id`;
+
+ALTER TABLE task_work_tracker 
+ADD COLUMN shift ENUM('DAY','NIGHT') DEFAULT 'DAY' AFTER tracker_note;
+
+
+
+Z0FBQUFBQnBqQWhWcmNFNEJnZmc4ZmtOZDZaRzljc1VGSjdpdDhEemZBd29xZU13VHl3ZGc3elhjM3kzNHhCaHp3eDQ1ZThERmx0VHhRY0tCZklyRW9nMjBDM1lILTFDRVE9PQ==
+
+update tfs_user set user_password = "Z0FBQUFBQnBuOHAwR2NFVVBzc0EyVEVVMll2djlGbU9yVGhUUk1HdlFiMm45d2N0aWkwdWpiNXBUVGRqcXZrdzZNT2ZVZXV5eTMwUUNob3VsOU54eExyVVo4eDFSN05MTEE9PQ==" where user_name = "test";
+
+
+
+ALTER TABLE email_send_logs
+ADD COLUMN our_response TEXT NULL AFTER body;
+
+19/3/2026
+ALTER TABLE `task` ADD `qc_percentage` INT NOT NULL AFTER `important_columns`;
+
+24/3/2026
+ALTER TABLE tfs_user 
+ADD COLUMN deactivated_at DATETIME NULL;
