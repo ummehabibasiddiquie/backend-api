@@ -1,3 +1,5 @@
+import os
+
 from flask import Blueprint, request
 from datetime import datetime
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -128,6 +130,10 @@ def _build_reset_email_html(reset_link: str) -> str:
 @password_reset_bp.route("/forgot-password", methods=["POST"])
 def forgot_password():
     data, err = validate_request(required=["user_email"])
+    print("HOST:", os.getenv("SMTP_HOST"))
+    print("USER:", os.getenv("SMTP_USER"))
+    print("PASS LENGTH:", len(os.getenv("SMTP_PASS")))
+    print("PASS REPR:", repr(os.getenv("SMTP_PASS")))
     if err:
         return err
 

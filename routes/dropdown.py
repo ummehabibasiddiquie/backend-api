@@ -325,6 +325,8 @@ def get():
                     SELECT
                         p.project_id,
                         p.project_name,
+                        p.ai_evaluation,
+                        p.duplicate_check,
                         t.task_id,
                         t.task_name,
                         t.task_target
@@ -381,6 +383,8 @@ def get():
                     SELECT
                         p.project_id,
                         p.project_name,
+                        p.ai_evaluation,
+                        p.duplicate_check,
                         t.task_id,
                         t.task_name,
                         t.task_target
@@ -402,6 +406,8 @@ def get():
                     projects_map[pid] = {
                         "project_id": pid,
                         "project_name": row["project_name"],
+                        "requires_ai_evaluation": bool(row.get("ai_evaluation", 0)),
+                        "requires_duplicate_check": bool(row.get("duplicate_check", 0)),
                         "tasks": []
                     }
 

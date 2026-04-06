@@ -1,6 +1,9 @@
 import mysql.connector
 import os, uuid
 from dotenv import load_dotenv
+import cloudinary
+from cloudinary.uploader import upload
+from cloudinary.api import resource
 
 load_dotenv()
 
@@ -11,10 +14,11 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 # Logical upload directory (no full path stored anywhere else)
 UPLOAD_DIR = "uploads"
 UPLOAD_FOLDER = os.path.join(BASE_DIR, UPLOAD_DIR)
+# print(f"Upload folder set to: {UPLOAD_FOLDER}")
 
 # Web-accessible base URL for uploads (matches Nginx /python/ prefix)
 # BASE_UPLOAD_URL = os.getenv("BASE_UPLOAD_URL", "/python/uploads")
-BASE_UPLOAD_URL = os.getenv("BASE_UPLOAD_URL", "/python/uploads")
+BASE_UPLOAD_URL = os.getenv("BASE_UPLOAD_URL", "/uploads")
 
 # Sub-folders for different file types
 UPLOAD_SUBDIRS = {
@@ -27,6 +31,22 @@ UPLOAD_SUBDIRS = {
 RESET_SECRET_KEY = os.getenv("RESET_SECRET_KEY")
 RESET_TOKEN_TTL_SECONDS = int(os.getenv("RESET_TOKEN_TTL_SECONDS", "300"))
 RESET_FRONTEND_URL = os.getenv("RESET_FRONTEND_URL")
+
+# Cloudinary Configuration
+CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
+CLOUDINARY_API_KEY = os.getenv("PYTHON_CLOUDINARY_API_KEY")
+CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET_KEY")
+
+# Configure Cloudinary
+if CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET:
+    cloudinary.config(
+        cloud_name=CLOUDINARY_CLOUD_NAME,
+        api_key=CLOUDINARY_API_KEY,
+        api_secret=CLOUDINARY_API_SECRET
+    )
+    print("✅ Cloudinary configured successfully")
+else:
+    print("⚠️  Cloudinary configuration missing - check .env file")
 
 if not RESET_SECRET_KEY:
     raise RuntimeError("RESET_SECRET_KEY is missing")

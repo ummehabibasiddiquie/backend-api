@@ -2,8 +2,9 @@
 
 from flask import Blueprint, request
 from utils.response import api_response
-from config import get_db_connection, UPLOAD_FOLDER, UPLOAD_SUBDIRS, BASE_UPLOAD_URL
-from utils.file_utils import save_uploaded_file  # ✅ multipart save
+from config import get_db_connection
+from utils.cloudinary_utils import upload_to_cloudinary, delete_from_cloudinary, FOLDER_TASK
+from utils.file_utils import is_allowed_file
 from datetime import datetime
 import json
 import os
@@ -44,29 +45,17 @@ def build_task_filename(project_id: str, task_name: str, original_filename: str)
 
 
 def get_task_file_dir() -> str:
-    return os.path.abspath(os.path.join(UPLOAD_FOLDER, UPLOAD_SUBDIRS["TASK_FILES"]))
+    return None  # no longer used (Cloudinary)
 
 
-def safe_remove_task_file(filename: str) -> bool:
-    """
-    Deletes file from uploads/<TASK_FILES>/ if exists.
-    Works even if DB stored URL/path (we basename it).
-    """
-    if not filename:
-        return False
-
-    filename = os.path.basename(str(filename))
-    base_dir = get_task_file_dir()
-    abs_path = os.path.abspath(os.path.join(base_dir, filename))
-
-    # safety: ensure inside TASK_FILES folder
-    if not abs_path.startswith(base_dir + os.sep):
-        raise ValueError(f"Invalid file path: {abs_path}")
-
-    if os.path.exists(abs_path):
-        os.remove(abs_path)
-        return True
-    return False
+def safe_delete_cloudinary_task_file(url_or_public_id: str) -> None:
+    """Silently delete a task file from Cloudinary."""
+    if not url_or_public_id:
+        return
+    try:
+        delete_from_cloudinary(url_or_public_id, resource_type="raw")
+    except Exception as e:
+        print(f"Cloudinary task delete failed: {e} | ref={url_or_public_id}")
 
 
 def _get_form_json_list(form, key: str):
@@ -86,17 +75,9 @@ def _get_form_json_list(form, key: str):
         return []
 
 
-def get_public_upload_base():
-    """Absolute base: https://tfshrms.cloud + /python/uploads"""
-    return request.host_url.rstrip("/") + BASE_UPLOAD_URL
-
-
-def task_file_url(filename: str):
-    if not filename:
-        return None
-    base = get_public_upload_base().rstrip("/")
-    sub = UPLOAD_SUBDIRS["TASK_FILES"].strip("/")
-    return f"{base}/{sub}/{os.path.basename(filename)}"
+def task_file_url(url: str):
+    """Task file is now a Cloudinary URL — return as-is."""
+    return url or None
 
 
 def _truthy(val: str) -> bool:
@@ -135,6 +116,15 @@ def add_task():
 
     is_active = form.get("is_active")
     is_active = int(is_active) if str(is_active).strip().isdigit() else 1
+    
+    qc_percentage = form.get("qc_percentage")
+    
+
+    if qc_percentage is not None:
+        try:
+            qc_percentage = float(qc_percentage)
+        except:
+            return api_response(400, "qc_percentage must be a number")
 
     # ✅ file upload (key: task_file)
     uploaded = request.files.get("task_file")
@@ -142,8 +132,13 @@ def add_task():
 
     if uploaded and uploaded.filename:
         try:
+            if not is_allowed_file(uploaded.filename):
+                return api_response(400, "Unsupported file type")
             custom_name = build_task_filename(project_id, task_name, uploaded.filename)
-            saved_filename = save_uploaded_file(uploaded, UPLOAD_SUBDIRS["TASK_FILES"], custom_name)
+            cloudinary_url, _ = upload_to_cloudinary(
+                uploaded, FOLDER_TASK, display_name=custom_name, resource_type="raw"
+            )
+            saved_filename = cloudinary_url
         except Exception as e:
             return api_response(400, f"File handling failed: {str(e)}")
 
@@ -162,13 +157,14 @@ def add_task():
                 task_name,
                 task_description,
                 task_target,
+                qc_percentage,
                 task_file,
                 important_columns,
                 is_active,
                 created_date,
                 updated_date
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 project_id,
@@ -176,6 +172,7 @@ def add_task():
                 task_name,
                 task_description,
                 task_target,
+                qc_percentage,
                 saved_filename,
                 json.dumps(important_columns),
                 is_active,
@@ -190,10 +187,10 @@ def add_task():
 
     except Exception as e:
         conn.rollback()
-        # cleanup saved file if DB insert fails
+        # cleanup Cloudinary upload if DB insert fails
         try:
             if saved_filename:
-                safe_remove_task_file(saved_filename)
+                safe_delete_cloudinary_task_file(saved_filename)
         except Exception:
             pass
         return api_response(500, f"Task creation failed: {str(e)}")
@@ -204,7 +201,7 @@ def add_task():
 
 
 # ---------------- UPDATE TASK (multipart/form-data) ---------------- #
-@task_bp.route("/update", methods=["POST","PUT"])
+@task_bp.route("/update", methods=["POST"])
 def update_task():
     form = request.form
     task_id = form.get("task_id")
@@ -259,9 +256,16 @@ def update_task():
         if form.get("is_active") is not None:
             v = form.get("is_active")
             update_values["is_active"] = int(v) if str(v).strip().isdigit() else v
+            
+        if form.get("qc_percentage") is not None:
+            try:
+                update_values["qc_percentage"] = float(form.get("qc_percentage"))
+            except:
+                conn.rollback()
+                return api_response(400, "qc_percentage must be a number")
 
         # --- FILE LOGIC ---
-        # Case 1: new file uploaded -> replace
+        # Case 1: new file uploaded → replace
         uploaded = request.files.get("task_file")
         if uploaded and uploaded.filename:
             old_file_to_delete = existing.get("task_file")
@@ -269,11 +273,16 @@ def update_task():
             use_project_id = update_values.get("project_id") or existing.get("project_id") or "PROJECT"
             use_task_name = update_values.get("task_name") or existing.get("task_name") or "TASK"
 
-            custom_name = build_task_filename(use_project_id, use_task_name, uploaded.filename)
-            new_name = save_uploaded_file(uploaded, UPLOAD_SUBDIRS["TASK_FILES"], custom_name)
+            if not is_allowed_file(uploaded.filename):
+                conn.rollback()
+                return api_response(400, "Unsupported file type")
 
-            new_file_saved = new_name
-            update_values["task_file"] = new_name
+            custom_name = build_task_filename(use_project_id, use_task_name, uploaded.filename)
+            cloudinary_url, _ = upload_to_cloudinary(
+                uploaded, FOLDER_TASK, display_name=custom_name, resource_type="raw"
+            )
+            new_file_saved = cloudinary_url
+            update_values["task_file"] = cloudinary_url
 
         # Case 2: explicit remove (even if no file chosen)
         # Send remove_task_file=1 from frontend when user clears files
@@ -298,12 +307,12 @@ def update_task():
 
         conn.commit()
 
-        # ✅ delete old file only after commit
+        # ✅ delete old Cloudinary file only after commit
         try:
             if old_file_to_delete and (update_values.get("task_file") is None or update_values.get("task_file") != old_file_to_delete):
-                safe_remove_task_file(old_file_to_delete)
+                safe_delete_cloudinary_task_file(old_file_to_delete)
         except Exception as e:
-            print("DELETE FAILED (task update):", e, "old_file=", old_file_to_delete)
+            print("Cloudinary task delete failed (update):", e, "old_file=", old_file_to_delete)
 
         new_file_saved = None  # so we don't delete it in except
 
@@ -313,10 +322,10 @@ def update_task():
 
     except Exception as e:
         conn.rollback()
-        # rollback cleanup: if new file saved but DB failed
+        # rollback cleanup: if Cloudinary upload succeeded but DB failed
         try:
             if new_file_saved:
-                safe_remove_task_file(new_file_saved)
+                safe_delete_cloudinary_task_file(new_file_saved)
         except Exception:
             pass
         return api_response(500, f"Task update failed: {str(e)}")
@@ -355,12 +364,12 @@ def delete_task():
         )
         conn.commit()
 
-        # delete file after commit
+        # delete from Cloudinary after commit
         try:
             if old_file:
-                safe_remove_task_file(old_file)
+                safe_delete_cloudinary_task_file(old_file)
         except Exception as e:
-            print("DELETE FAILED (task delete):", e, "file=", old_file)
+            print("Cloudinary task delete failed (task delete):", e, "file=", old_file)
 
         return api_response(200, "Task deleted successfully")
 
@@ -384,7 +393,7 @@ def list_tasks():
             """
             SELECT task_id, project_id, task_team_id,
                    task_name, task_description, task_target,
-                   task_file, important_columns,
+                   qc_percentage,task_file, important_columns,
                    is_active, created_date, updated_date
             FROM task
             WHERE is_active=1
@@ -407,6 +416,7 @@ def list_tasks():
                     "task_description": t["task_description"],
                     "task_target": t["task_target"],
                     "important_columns": important_cols,
+                    "qc_percentage": t.get("qc_percentage"),
                     "task_file": task_file_url(t.get("task_file")),  # ✅ absolute
                     "created_date": t["created_date"],
                     "updated_date": t["updated_date"],

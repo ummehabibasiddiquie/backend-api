@@ -3,7 +3,7 @@
 from flask import Blueprint, request
 from config import get_db_connection
 from utils.response import api_response
-from datetime import datetime
+from datetime import datetime, timedelta
 
 user_monthly_tracker_bp = Blueprint("user_monthly_tracker", __name__)
 
@@ -128,7 +128,7 @@ def add_user_monthly_target():
                 """
                 SELECT user_id
                 FROM tfs_user
-                WHERE user_id=%s AND is_active=1 AND is_delete=1
+                WHERE user_id=%s AND is_delete=1
                 """,
                 (user_id,),
             )
@@ -143,7 +143,7 @@ def add_user_monthly_target():
                 """
                 SELECT user_monthly_tracker_id
                 FROM user_monthly_tracker
-                WHERE user_id=%s AND month_year=%s AND is_active=1
+                WHERE user_id=%s AND month_year=%s 
                 """,
                 (user_id, month_year),
             )
@@ -262,7 +262,7 @@ def update_user_monthly_target():
                 """
                 SELECT user_id
                 FROM tfs_user
-                WHERE user_id=%s AND is_active=1
+                WHERE user_id=%s AND is_delete=1
                 """,
                 (new_user_id,),
             )
@@ -385,14 +385,34 @@ def list_user_monthly_targets():
 
         if not agent_role_id:
             return api_response(500, "Agent role not found in user_role table", None)
+        
+        if month_year:
+            dt = datetime.strptime(month_year, "%b%Y")  # Mar2026
+            month_start = dt.replace(day=1)
+        else:
+            now = datetime.now()
+            month_start = now.replace(day=1)
+
+        month_end = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(seconds=1)
+
+        month_start_str = month_start.strftime("%Y-%m-%d %H:%M:%S")
+        month_end_str = month_end.strftime("%Y-%m-%d %H:%M:%S")
 
         # ---------------- Base WHERE: only agent rows ----------------
         user_where = """
-            WHERE u.is_active=1
-              AND u.is_delete=1
-              AND u.role_id=%s
+            WHERE u.is_delete=1
+            AND u.role_id=%s
+            AND (
+                    u.is_active = 1
+                    OR (
+                        u.is_active = 0
+                        AND u.deactivated_at IS NOT NULL
+                        AND u.deactivated_at BETWEEN %s AND %s
+                    )
+            )
         """
-        user_params = [agent_role_id]
+
+        user_params = [agent_role_id, month_start_str, month_end_str]
 
         if filter_user_id:
             user_where += " AND u.user_id=%s"
