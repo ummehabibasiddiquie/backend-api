@@ -66,19 +66,19 @@ def user_list_with_permissions():
         if role == "qa":
             query += """ AND (
                 u.qa_id = %s 
-                OR JSON_CONTAINS(u.qa_id, JSON_ARRAY(%s))
+                OR (JSON_VALID(u.qa_id) AND JSON_CONTAINS(u.qa_id, JSON_ARRAY(%s)))
             )"""
             params.extend([logged_in_id_str, logged_in_id_str])
         elif role == "assistant manager":
             query += """ AND (
                 u.asst_manager_id = %s 
-                OR JSON_CONTAINS(u.asst_manager_id, JSON_ARRAY(%s))
+                OR (JSON_VALID(u.asst_manager_id) AND JSON_CONTAINS(u.asst_manager_id, JSON_ARRAY(%s)))
             )"""
             params.extend([logged_in_id_str, logged_in_id_str])
         elif role == "manager" or role == "project manager":
             query += """ AND (
                 u.project_manager_id = %s 
-                OR JSON_CONTAINS(u.project_manager_id, JSON_ARRAY(%s))
+                OR (JSON_VALID(u.project_manager_id) AND JSON_CONTAINS(u.project_manager_id, JSON_ARRAY(%s)))
             )"""
             params.extend([logged_in_id_str, logged_in_id_str])
         # admin / super admin -> no extra filter
