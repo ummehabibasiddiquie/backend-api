@@ -452,7 +452,7 @@ def view_trackers():
         # Main Tracker Query
         # -----------------------------
         query = """
-        SELECT 
+        SELECT DISTINCT
             twt.*, u.user_id, u.user_id AS agent_id, u.user_name, u.user_email,
             am.user_id AS assistant_manager_id, am.user_name AS assistant_manager_name, am.user_email AS assistant_manager_email,
             p.project_id, p.project_name, p.project_category_id, pc.afd_id,
@@ -483,7 +483,7 @@ def view_trackers():
             query += f" AND twt.user_id IN ({placeholders})"
 
             params.extend(user_ids_filter)
-        elif role_name not in ("admin", "super admin", "project manager","assistant manager","qa"):
+        elif role_name not in ("admin", "super admin", "project manager"):
             manager_id_str = str(logged_in_user_id)
             query += """
                 AND twt.user_id IN (
@@ -735,7 +735,7 @@ def view_daily_trackers():
             where += " AND twt.user_id=%s"
             params.append(data["user_id"])
         else:
-            if "admin" not in role_name and "project manager" not in role_name and "assistant manager" not in role_name and "qa" not in role_name:
+            if "admin" not in role_name and "project manager" not in role_name:
                 manager_id = str(logged_in_user_id)
                 where += f"""
                     AND twt.user_id IN (
