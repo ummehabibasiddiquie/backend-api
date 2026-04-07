@@ -63,24 +63,38 @@ def user_list_with_permissions():
 
         # 4) Role-based filtering (handle multiple manager/QA assignments in JSON arrays)
         logged_in_id_str = str(logged_in_user_id)
+        logged_in_id_int = int(logged_in_user_id)
+        
         if role == "qa":
             query += """ AND (
                 u.qa_id = %s 
-                OR (JSON_VALID(u.qa_id) AND JSON_CONTAINS(u.qa_id, JSON_ARRAY(%s)))
+                OR u.qa_id = %s
+                OR (JSON_VALID(u.qa_id) AND (
+                    JSON_CONTAINS(u.qa_id, JSON_ARRAY(%s)) 
+                    OR JSON_CONTAINS(u.qa_id, JSON_ARRAY(CAST(%s AS UNSIGNED)))
+                ))
             )"""
-            params.extend([logged_in_id_str, logged_in_id_str])
+            params.extend([logged_in_id_str, logged_in_id_int, logged_in_id_str, logged_in_id_str])
         elif role == "assistant manager":
             query += """ AND (
                 u.asst_manager_id = %s 
-                OR (JSON_VALID(u.asst_manager_id) AND JSON_CONTAINS(u.asst_manager_id, JSON_ARRAY(%s)))
+                OR u.asst_manager_id = %s
+                OR (JSON_VALID(u.asst_manager_id) AND (
+                    JSON_CONTAINS(u.asst_manager_id, JSON_ARRAY(%s))
+                    OR JSON_CONTAINS(u.asst_manager_id, JSON_ARRAY(CAST(%s AS UNSIGNED)))
+                ))
             )"""
-            params.extend([logged_in_id_str, logged_in_id_str])
+            params.extend([logged_in_id_str, logged_in_id_int, logged_in_id_str, logged_in_id_str])
         elif role == "manager" or role == "project manager":
             query += """ AND (
                 u.project_manager_id = %s 
-                OR (JSON_VALID(u.project_manager_id) AND JSON_CONTAINS(u.project_manager_id, JSON_ARRAY(%s)))
+                OR u.project_manager_id = %s
+                OR (JSON_VALID(u.project_manager_id) AND (
+                    JSON_CONTAINS(u.project_manager_id, JSON_ARRAY(%s))
+                    OR JSON_CONTAINS(u.project_manager_id, JSON_ARRAY(CAST(%s AS UNSIGNED)))
+                ))
             )"""
-            params.extend([logged_in_id_str, logged_in_id_str])
+            params.extend([logged_in_id_str, logged_in_id_int, logged_in_id_str, logged_in_id_str])
         # admin / super admin -> no extra filter
 
         # 5) Additional filter: if filter_role is provided, filter by that role
@@ -95,9 +109,13 @@ def user_list_with_permissions():
 
         # Debug info for troubleshooting
         debug_info = {
+            "logged_in_user_id": logged_in_user_id,
+            "logged_in_user_id_type": type(logged_in_user_id).__name__,
+            "raw_role_name": role_row["role_name"],
             "detected_role": role,
             "sql": query,
-            "params": params
+            "params": params,
+            "user_count": len(users)
         }
 
         # return api_response(200, "Users with permissions fetched successfully", {"users": users, "debug": debug_info})
