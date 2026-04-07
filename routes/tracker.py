@@ -485,20 +485,38 @@ def view_trackers():
             params.extend(user_ids_filter)
         elif role_name not in ("admin", "super admin", "project manager"):
             manager_id_str = str(logged_in_user_id)
+            manager_id_int = int(logged_in_user_id)
             query += """
                 AND twt.user_id IN (
                     SELECT tu.user_id
                     FROM tfs_user tu
-                    WHERE (
-                        tu.project_manager_id=%s OR tu.asst_manager_id=%s OR tu.qa_id=%s
-                        OR tu.user_id=%s
-                        OR JSON_CONTAINS(tu.project_manager_id, JSON_ARRAY(%s))
-                        OR JSON_CONTAINS(tu.asst_manager_id, JSON_ARRAY(%s))
-                        OR JSON_CONTAINS(tu.qa_id, JSON_ARRAY(%s))
+                    WHERE tu.is_delete = 1
+                    AND (
+                        tu.project_manager_id = %s 
+                        OR tu.project_manager_id = %s
+                        OR tu.asst_manager_id = %s 
+                        OR tu.asst_manager_id = %s
+                        OR tu.qa_id = %s 
+                        OR tu.qa_id = %s
+                        OR tu.user_id = %s
+                        OR (JSON_VALID(tu.project_manager_id) AND JSON_CONTAINS(tu.project_manager_id, JSON_ARRAY(%s)))
+                        OR (JSON_VALID(tu.project_manager_id) AND JSON_CONTAINS(tu.project_manager_id, JSON_ARRAY(CAST(%s AS UNSIGNED))))
+                        OR (JSON_VALID(tu.asst_manager_id) AND JSON_CONTAINS(tu.asst_manager_id, JSON_ARRAY(%s)))
+                        OR (JSON_VALID(tu.asst_manager_id) AND JSON_CONTAINS(tu.asst_manager_id, JSON_ARRAY(CAST(%s AS UNSIGNED))))
+                        OR (JSON_VALID(tu.qa_id) AND JSON_CONTAINS(tu.qa_id, JSON_ARRAY(%s)))
+                        OR (JSON_VALID(tu.qa_id) AND JSON_CONTAINS(tu.qa_id, JSON_ARRAY(CAST(%s AS UNSIGNED))))
                     )
                 )
             """
-            params.extend([manager_id_str]*7)
+            params.extend([
+                manager_id_str, manager_id_int,  # project_manager_id
+                manager_id_str, manager_id_int,  # asst_manager_id
+                manager_id_str, manager_id_int,  # qa_id
+                manager_id_int,  # user_id
+                manager_id_str, manager_id_str,  # project_manager_id JSON
+                manager_id_str, manager_id_str,  # asst_manager_id JSON
+                manager_id_str, manager_id_str   # qa_id JSON
+            ])
         if data.get("project_id"):
             query += " AND twt.project_id=%s"
             params.append(data["project_id"])
@@ -736,7 +754,8 @@ def view_daily_trackers():
             params.append(data["user_id"])
         else:
             if "admin" not in role_name and "project manager" not in role_name:
-                manager_id = str(logged_in_user_id)
+                manager_id_str = str(logged_in_user_id)
+                manager_id_int = int(logged_in_user_id)
                 where += f"""
                     AND twt.user_id IN (
                         SELECT tu.user_id
@@ -744,16 +763,30 @@ def view_daily_trackers():
                         WHERE tu.is_delete = 1
                           AND (
                                 tu.project_manager_id = %s
+                                OR tu.project_manager_id = %s
+                                OR tu.asst_manager_id = %s
                                 OR tu.asst_manager_id = %s
                                 OR tu.qa_id = %s
+                                OR tu.qa_id = %s
                                 OR tu.user_id = %s
-                                OR JSON_CONTAINS(tu.project_manager_id, JSON_ARRAY(%s))
-                                OR JSON_CONTAINS(tu.asst_manager_id, JSON_ARRAY(%s))
-                                OR JSON_CONTAINS(tu.qa_id, JSON_ARRAY(%s))
+                                OR (JSON_VALID(tu.project_manager_id) AND JSON_CONTAINS(tu.project_manager_id, JSON_ARRAY(%s)))
+                                OR (JSON_VALID(tu.project_manager_id) AND JSON_CONTAINS(tu.project_manager_id, JSON_ARRAY(CAST(%s AS UNSIGNED))))
+                                OR (JSON_VALID(tu.asst_manager_id) AND JSON_CONTAINS(tu.asst_manager_id, JSON_ARRAY(%s)))
+                                OR (JSON_VALID(tu.asst_manager_id) AND JSON_CONTAINS(tu.asst_manager_id, JSON_ARRAY(CAST(%s AS UNSIGNED))))
+                                OR (JSON_VALID(tu.qa_id) AND JSON_CONTAINS(tu.qa_id, JSON_ARRAY(%s)))
+                                OR (JSON_VALID(tu.qa_id) AND JSON_CONTAINS(tu.qa_id, JSON_ARRAY(CAST(%s AS UNSIGNED))))
                           )
                     )
                 """
-                params.extend([manager_id] * 7)
+                params.extend([
+                    manager_id_str, manager_id_int,
+                    manager_id_str, manager_id_int,
+                    manager_id_str, manager_id_int,
+                    manager_id_int,
+                    manager_id_str, manager_id_str,
+                    manager_id_str, manager_id_str,
+                    manager_id_str, manager_id_str
+                ])
 
         # -------- Daily aggregation + cumulative + daily required
         query = f"""
