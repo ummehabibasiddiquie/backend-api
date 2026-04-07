@@ -61,16 +61,26 @@ def user_list_with_permissions():
         """
         params = []
 
-        # 4) Role-based filtering (align with user.py)
+        # 4) Role-based filtering (handle multiple manager/QA assignments in JSON arrays)
+        logged_in_id_str = str(logged_in_user_id)
         if role == "qa":
-            query += " AND u.qa_id = %s"
-            params.append(logged_in_user_id)
+            query += """ AND (
+                u.qa_id = %s 
+                OR JSON_CONTAINS(u.qa_id, JSON_ARRAY(%s))
+            )"""
+            params.extend([logged_in_id_str, logged_in_id_str])
         elif role == "assistant manager":
-            query += " AND u.asst_manager_id = %s"
-            params.append(logged_in_user_id)
+            query += """ AND (
+                u.asst_manager_id = %s 
+                OR JSON_CONTAINS(u.asst_manager_id, JSON_ARRAY(%s))
+            )"""
+            params.extend([logged_in_id_str, logged_in_id_str])
         elif role == "manager" or role == "project manager":
-            query += " AND u.project_manager_id = %s"
-            params.append(logged_in_user_id)
+            query += """ AND (
+                u.project_manager_id = %s 
+                OR JSON_CONTAINS(u.project_manager_id, JSON_ARRAY(%s))
+            )"""
+            params.extend([logged_in_id_str, logged_in_id_str])
         # admin / super admin -> no extra filter
 
         # 5) Additional filter: if filter_role is provided, filter by that role
