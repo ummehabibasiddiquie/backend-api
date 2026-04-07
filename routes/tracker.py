@@ -834,6 +834,18 @@ def view_daily_trackers():
                 t.team_id,
                 t.team_name,
 
+                -- ✅ assistant manager info (GROUP_CONCAT to prevent duplicates)
+                (SELECT GROUP_CONCAT(DISTINCT am.user_id) 
+                 FROM tfs_user am 
+                 WHERE u.asst_manager_id = am.user_id 
+                    OR JSON_CONTAINS(u.asst_manager_id, JSON_ARRAY(am.user_id))
+                ) AS assistant_manager_id,
+                (SELECT GROUP_CONCAT(DISTINCT am.user_name) 
+                 FROM tfs_user am 
+                 WHERE u.asst_manager_id = am.user_id 
+                    OR JSON_CONTAINS(u.asst_manager_id, JSON_ARRAY(am.user_id))
+                ) AS assistant_manager_name,
+
                 dwc.work_date,
 
                 ROUND(dwc.total_billable_hours_day, 4) AS total_billable_hours_day,
