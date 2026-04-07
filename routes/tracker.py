@@ -452,15 +452,28 @@ def view_trackers():
         # Main Tracker Query
         # -----------------------------
         query = """
-        SELECT DISTINCT
+        SELECT 
             twt.*, u.user_id, u.user_id AS agent_id, u.user_name, u.user_email,
-            am.user_id AS assistant_manager_id, am.user_name AS assistant_manager_name, am.user_email AS assistant_manager_email,
+            (SELECT GROUP_CONCAT(DISTINCT am.user_id) 
+             FROM tfs_user am 
+             WHERE u.asst_manager_id = am.user_id 
+                OR JSON_CONTAINS(u.asst_manager_id, JSON_ARRAY(am.user_id))
+            ) AS assistant_manager_id,
+            (SELECT GROUP_CONCAT(DISTINCT am.user_name) 
+             FROM tfs_user am 
+             WHERE u.asst_manager_id = am.user_id 
+                OR JSON_CONTAINS(u.asst_manager_id, JSON_ARRAY(am.user_id))
+            ) AS assistant_manager_name,
+            (SELECT GROUP_CONCAT(DISTINCT am.user_email) 
+             FROM tfs_user am 
+             WHERE u.asst_manager_id = am.user_id 
+                OR JSON_CONTAINS(u.asst_manager_id, JSON_ARRAY(am.user_id))
+            ) AS assistant_manager_email,
             p.project_id, p.project_name, p.project_category_id, pc.afd_id,
             tk.task_name, tk.qc_percentage, t.team_name,
             (twt.production / NULLIF(twt.tenure_target, 0)) AS billable_hours
         FROM task_work_tracker twt
         LEFT JOIN tfs_user u ON u.user_id = twt.user_id
-        LEFT JOIN tfs_user am ON (u.asst_manager_id = am.user_id OR JSON_CONTAINS(u.asst_manager_id, CONCAT('[', am.user_id, ']')))
         LEFT JOIN project p ON p.project_id = twt.project_id
         LEFT JOIN task tk ON tk.task_id = twt.task_id
         LEFT JOIN project_category pc ON pc.project_category_id = p.project_category_id
