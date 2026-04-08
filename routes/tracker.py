@@ -804,7 +804,7 @@ def view_daily_trackers():
         # -------- Daily aggregation + cumulative + daily required
         query = f"""
             WITH daily AS (
-                SELECT
+                SELECT DISTINCT
                     twt.user_id,
                     twt.shift,
                     DATE(CAST(twt.date_time AS DATETIME)) AS work_date,
@@ -854,9 +854,8 @@ def view_daily_trackers():
                 ROUND(dwc.cumulative_billable_hours_till_day, 4)
                     AS cumulative_billable_hours_till_day,
 
-                -- QC data from separate tables
-                # qr.qc_score AS qc_score,
-                tqc.qc_score AS qc_score,
+                -- QC data from separate tables (temp_qc takes priority for historical data)
+                COALESCE(tqc.qc_score, qr.qc_score) AS qc_score,
                 tqc.assigned_hours AS assigned_hours,
 
                 umt.user_monthly_tracker_id,
