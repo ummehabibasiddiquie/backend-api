@@ -244,7 +244,6 @@ def update_tracker():
 
         # update numeric fields (optional)
         production = float(form.get("production", tracker["production"]))
-        base_target = float(form.get("base_target", tracker["actual_target"]))
         date_time = form.get("date_time", tracker["date_time"])
         project_id = form.get("project_id", tracker["project_id"])
         task_id = form.get("task_id", tracker["task_id"])
@@ -256,8 +255,15 @@ def update_tracker():
         if not user_row:
             return api_response(404, "User not found")
 
-        # compute targets (keep your existing calculate_targets)
-        actual_target, tenure_target = calculate_targets(base_target, user_row["user_tenure"])
+        # compute targets only if base_target is explicitly provided
+        if "base_target" in form:
+            base_target = float(form.get("base_target"))
+            actual_target, tenure_target = calculate_targets(base_target, user_row["user_tenure"])
+        else:
+            # keep existing targets from tracker (convert to float)
+            actual_target = float(tracker["actual_target"]) if tracker["actual_target"] else 0
+            tenure_target = float(tracker["tenure_target"]) if tracker["tenure_target"] else 0
+
         actual_billable_hours = production / actual_target if actual_target else 0
 
         tracker_file = old_file
