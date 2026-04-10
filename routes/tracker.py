@@ -256,9 +256,12 @@ def update_tracker():
             return api_response(404, "User not found")
 
         # compute targets only if base_target is explicitly provided
+        # NOTE: The base_target field in API contains tenure_target value
         if "base_target" in form:
-            base_target = float(form.get("base_target"))
-            actual_target, tenure_target = calculate_targets(base_target, user_row["user_tenure"])
+            tenure_target = float(form.get("base_target"))  # API sends tenure_target as base_target
+            user_tenure = float(user_row["user_tenure"])
+            base_target = tenure_target / user_tenure if user_tenure else 0
+            actual_target = round(base_target, 2)
         else:
             # keep existing targets from tracker (convert to float)
             actual_target = float(tracker["actual_target"]) if tracker["actual_target"] else 0
