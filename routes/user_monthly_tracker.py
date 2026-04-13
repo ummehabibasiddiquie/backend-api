@@ -508,11 +508,11 @@ def list_user_monthly_targets():
                     + COALESCE(umt.extra_assigned_hours, 0)
                 ) AS monthly_total_target,
 
-                COALESCE(SUM(twt.billable_hours), 0) AS total_billable_hours,
+                COALESCE(SUM(COALESCE(twt.production, 0) / NULLIF(twt.tenure_target, 0)), 0) AS total_billable_hours,
                 COALESCE(SUM(twt.production), 0) AS total_production,
                 COUNT(twt.tracker_id) AS tracker_rows,
 
-                -- ✅ QC monthly avg and qc-days count
+                -- QC monthly avg and qc-days count
                 qc.avg_qc_score AS avg_qc_score,
                 COALESCE(qc.qc_days_count, 0) AS qc_days_count,
 
@@ -520,7 +520,7 @@ def list_user_monthly_targets():
                     (
                         COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0)
                         + COALESCE(umt.extra_assigned_hours, 0)
-                    ) - COALESCE(SUM(twt.billable_hours), 0),
+                    ) - COALESCE(SUM(COALESCE(twt.production, 0) / NULLIF(twt.tenure_target, 0)), 0),
                     0
                 ) AS pending_target
             FROM tfs_user u
