@@ -79,9 +79,12 @@ def add_user_monthly_target():
     """
     Accepts either:
       - Single object:
-          {"user_id": 1, "month_year": "JAN2026", "monthly_target": "160", "working_days": "22", "extra_assigned_hours": 0}
+          {"user_id": 1, "month_year": "JAN2026", "extra_assigned_hours": 0}
       - Array of objects:
           [{"user_id": 1, ...}, {"user_id": 2, ...}]
+    
+    Note: Only extra_assigned_hours can be set by managers.
+    monthly_target and working_days are calculated from the roster system.
     """
     raw = request.get_json(silent=True)
 
@@ -96,7 +99,7 @@ def add_user_monthly_target():
     if not records:
         return api_response(400, "No records provided")
 
-    required_fields = ["user_id", "month_year", "monthly_target", "working_days"]
+    required_fields = ["user_id", "month_year"]
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -118,9 +121,7 @@ def add_user_monthly_target():
 
             user_id = int(data["user_id"])
             month_year = str(data["month_year"]).strip()  # MONYYYY like JAN2026
-            monthly_target = str(data["monthly_target"]).strip()  # TEXT in DB
             extra_assigned_hours = int(data.get("extra_assigned_hours") or 0)
-            working_days = str(data["working_days"]).strip()  # TEXT in DB
             created_date = str(data.get("created_date") or now_str())
 
             # ---- Validate user exists
@@ -138,42 +139,110 @@ def add_user_monthly_target():
                 )
                 continue
 
-            # ---- Prevent duplicate active (user + month)
-            cursor.execute(
-                """
-                SELECT user_monthly_tracker_id
-                FROM user_monthly_tracker
-                WHERE user_id=%s AND month_year=%s 
-                """,
-                (user_id, month_year),
-            )
-            if cursor.fetchone():
-                skipped.append(
-                    {
-                        "index": idx + 1,
-                        "user_id": user_id,
-                        "month_year": month_year,
-                        "reason": "Monthly target already exists for this user and month",
-                    }
+            # ---- Conditional logic based on date
+            # Convert month_year to date for comparison
+            try:
+                month_date = datetime.strptime(month_year, '%b%Y')  # APR2025 -> 2025-04-01
+                cutoff_date = datetime(2025, 4, 1)  # April 2025 cutoff
+                
+                if month_date >= cutoff_date:
+                    # Use rosters table for April 2025 onwards
+                    cursor.execute(
+                        """
+                        SELECT roster_id
+                        FROM rosters
+                        WHERE user_id=%s AND month_year=%s 
+                        """,
+                        (user_id, month_year),
+                    )
+                    existing_roster = cursor.fetchone()
+                    if existing_roster:
+                        # Get current roster to preserve original base_target
+                        cursor.execute(
+                            """
+                            SELECT base_target, extra_assigned_hours
+                            FROM rosters
+                            WHERE user_id=%s AND month_year=%s
+                            """,
+                            (user_id, month_year),
+                        )
+                        current_roster = cursor.fetchone()
+                        if current_roster:
+                            # Calculate new final_target: original base_target + new extra_assigned hours
+                            new_final_target = (current_roster['base_target'] or 0) + extra_assigned_hours
+                            cursor.execute(
+                                """
+                                UPDATE rosters
+                                SET extra_assigned_hours=%s, updated_at=%s,
+                                    final_target=%s
+                                WHERE user_id=%s AND month_year=%s
+                                """,
+                                (extra_assigned_hours, created_date, new_final_target, user_id, month_year),
+                            )
+                            inserted_id = existing_roster['roster_id']
+                        else:
+                            inserted_id = existing_roster['roster_id']
+                    else:
+                        # Insert new roster record with dynamic final_target calculation
+                        cursor.execute(
+                            """
+                            INSERT INTO rosters
+                                (user_id, month_year, extra_assigned_hours, final_target, is_active, created_date)
+                            VALUES (%s, %s, %s, %s, 1, %s)
+                            """,
+                            (
+                                user_id,
+                                month_year,
+                                extra_assigned_hours,
+                                extra_assigned_hours,  # final_target = extra_assigned_hours (base_target = 0 initially)
+                                created_date,
+                            ),
+                        )
+                        inserted_id = cursor.lastrowid
+                else:
+                    # Use user_monthly_tracker table only for before April 2025 (historical data)
+                    # For April 2025 onwards, we should NOT create/update user_monthly_tracker records
+                    # All new data should go to rosters table
+                    return api_response(400, f"Invalid date: {month_year}. Only historical data (before April 2025) can be added to user_monthly_tracker. For April 2025 onwards, use rosters table.")
+            except ValueError:
+                # Invalid date format, use user_monthly_tracker as fallback
+                cursor.execute(
+                    """
+                    SELECT user_monthly_tracker_id
+                    FROM user_monthly_tracker
+                    WHERE user_id=%s AND month_year=%s 
+                    """,
+                    (user_id, month_year),
                 )
-                continue
-
-            cursor.execute(
-                """
-                INSERT INTO user_monthly_tracker
-                    (user_id, month_year, monthly_target, extra_assigned_hours, working_days, is_active, created_date)
-                VALUES (%s, %s, %s, %s, %s, 1, %s)
-                """,
-                (
-                    user_id,
-                    month_year,
-                    monthly_target,
-                    extra_assigned_hours,
-                    working_days,
-                    created_date,
-                ),
-            )
-            inserted_ids.append(cursor.lastrowid)
+                existing_tracker = cursor.fetchone()
+                if existing_tracker:
+                    # Update existing tracker's extra_assigned_hours
+                    cursor.execute(
+                        """
+                        UPDATE user_monthly_tracker
+                        SET extra_assigned_hours=%s
+                        WHERE user_id=%s AND month_year=%s
+                        """,
+                        (extra_assigned_hours, user_id, month_year),
+                    )
+                    inserted_id = existing_tracker['user_monthly_tracker_id']
+                else:
+                    # Insert new tracker record
+                    cursor.execute(
+                        """
+                        INSERT INTO user_monthly_tracker
+                            (user_id, month_year, extra_assigned_hours, is_active, created_date)
+                        VALUES (%s, %s, %s, 1, %s)
+                        """,
+                        (
+                            user_id,
+                            month_year,
+                            extra_assigned_hours,
+                            created_date,
+                        ),
+                    )
+                    inserted_id = cursor.lastrowid
+            inserted_ids.append(inserted_id)
 
         conn.commit()
 
@@ -198,19 +267,19 @@ def add_user_monthly_target():
     finally:
         cursor.close()
         conn.close()
-
-
-# ---------------------------
 # UPDATE
 # ---------------------------
 @user_monthly_tracker_bp.route("/update", methods=["POST"])
 def update_user_monthly_target():
     data = request.get_json(silent=True) or {}
 
-    if not data.get("user_monthly_tracker_id"):
-        return api_response(400, "user_monthly_tracker_id is required")
+    # Support both user_monthly_tracker_id and roster_id
+    record_id = data.get("user_monthly_tracker_id") or data.get("roster_id")
+    if not record_id:
+        return api_response(400, "user_monthly_tracker_id or roster_id is required")
 
-    umt_id = int(data["user_monthly_tracker_id"])
+    record_id = int(record_id)
+    is_roster = data.get("roster_id") is not None
 
     updates = []
     params = []
@@ -223,17 +292,14 @@ def update_user_monthly_target():
         updates.append("month_year=%s")
         params.append(str(data["month_year"]).strip())  # keep as-is (MONYYYY)
 
-    if "monthly_target" in data and data["monthly_target"] not in [None, ""]:
-        updates.append("monthly_target=%s")
-        params.append(str(data["monthly_target"]).strip())
-
+    # Only extra_assigned_hours can be updated by managers
+    # monthly_target and working_days are calculated from roster system
+    # When extra_assigned_hours changes, dynamically recalculate final_target = base_target + extra_assigned_hours
     if "extra_assigned_hours" in data and data["extra_assigned_hours"] not in [None, ""]:
         updates.append("extra_assigned_hours=%s")
-        params.append(int(data["extra_assigned_hours"])) 
-
-    if "working_days" in data and data["working_days"] not in [None, ""]:
-        updates.append("working_days=%s")
-        params.append(str(data["working_days"]).strip())
+        updates.append("final_target = COALESCE(base_target, 0) + %s")
+        params.append(int(data["extra_assigned_hours"]))
+        params.append(int(data["extra_assigned_hours"]))
 
     if not updates:
         return api_response(400, "Nothing to update")
@@ -242,15 +308,25 @@ def update_user_monthly_target():
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # Current row
-        cursor.execute(
-            """
-            SELECT user_id, month_year
-            FROM user_monthly_tracker
-            WHERE user_monthly_tracker_id=%s
-            """,
-            (umt_id,),
-        )
+        # Current row - check both tables
+        if is_roster:
+            cursor.execute(
+                """
+                SELECT user_id, month_year
+                FROM rosters
+                WHERE roster_id=%s
+                """,
+                (record_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT user_id, month_year
+                FROM user_monthly_tracker
+                WHERE user_monthly_tracker_id=%s
+                """,
+                (record_id,),
+            )
         current = cursor.fetchone()
         if not current:
             return api_response(404, "Active record not found")
@@ -285,24 +361,44 @@ def update_user_monthly_target():
                 else str(current["month_year"])
             )
 
-            cursor.execute(
-                """
-                SELECT user_monthly_tracker_id
-                FROM user_monthly_tracker
-                WHERE user_id=%s AND month_year=%s 
-                  AND user_monthly_tracker_id<>%s
-                """,
-                (final_user_id, final_month_year, umt_id),
-            )
-            if cursor.fetchone():
-                return api_response(409, "Monthly target already exists for this user and month")
+            if is_roster:
+                cursor.execute(
+                    """
+                    SELECT roster_id
+                    FROM rosters
+                    WHERE user_id=%s AND month_year=%s 
+                      AND roster_id<>%s
+                    """,
+                    (final_user_id, final_month_year, record_id),
+                )
+                if cursor.fetchone():
+                    return api_response(409, "Roster already exists for this user and month")
+            else:
+                cursor.execute(
+                    """
+                    SELECT user_monthly_tracker_id
+                    FROM user_monthly_tracker
+                    WHERE user_id=%s AND month_year=%s 
+                      AND user_monthly_tracker_id<>%s
+                    """,
+                    (final_user_id, final_month_year, record_id),
+                )
+                if cursor.fetchone():
+                    return api_response(409, "Monthly target already exists for this user and month")
 
-        params.append(umt_id)
-        query = f"""
-            UPDATE user_monthly_tracker
-            SET {', '.join(updates)}
-            WHERE user_monthly_tracker_id=%s
-        """
+        params.append(record_id)
+        if is_roster:
+            query = f"""
+                UPDATE rosters
+                SET {', '.join(updates)}
+                WHERE roster_id=%s
+            """
+        else:
+            query = f"""
+                UPDATE user_monthly_tracker
+                SET {', '.join(updates)}
+                WHERE user_monthly_tracker_id=%s
+            """
         cursor.execute(query, tuple(params))
         conn.commit()
 
@@ -445,9 +541,31 @@ def list_user_monthly_targets():
 
         if month_year:
             umt_join = """
-                INNER JOIN user_monthly_tracker umt
+                INNER JOIN (
+                    -- Hybrid approach: Use rosters for April 2025 onwards, user_monthly_tracker for before April
+                    SELECT 
+                        user_id,
+                        month_year,
+                        working_days,
+                        final_target as monthly_target,
+                        extra_assigned_hours,
+                        roster_id as user_monthly_tracker_id,
+                        'roster' as source_table
+                    FROM rosters 
+                    WHERE month_year >= '202504'  -- April 2025 onwards
+                    UNION ALL
+                    SELECT 
+                        user_id,
+                        month_year,
+                        working_days,
+                        monthly_target,
+                        extra_assigned_hours,
+                        user_monthly_tracker_id,
+                        'user_monthly_tracker' as source_table
+                    FROM user_monthly_tracker
+                    WHERE is_active=1 AND month_year < '202504'   -- Before April 2025
+                ) umt
                   ON umt.user_id = u.user_id
-                 AND umt.is_active=1
                  AND umt.month_year=%s
             """
             twt_join = f"""
@@ -508,7 +626,7 @@ def list_user_monthly_targets():
                     + COALESCE(umt.extra_assigned_hours, 0)
                 ) AS monthly_total_target,
 
-                COALESCE(SUM(COALESCE(twt.production, 0) / NULLIF(twt.tenure_target, 0)), 0) AS total_billable_hours,
+                COALESCE(SUM(twt.billable_hours), 0) AS total_billable_hours,
                 COALESCE(SUM(twt.production), 0) AS total_production,
                 COUNT(twt.tracker_id) AS tracker_rows,
 
@@ -520,7 +638,7 @@ def list_user_monthly_targets():
                     (
                         COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0)
                         + COALESCE(umt.extra_assigned_hours, 0)
-                    ) - COALESCE(SUM(COALESCE(twt.production, 0) / NULLIF(twt.tenure_target, 0)), 0),
+                    ) - COALESCE(SUM(twt.billable_hours), 0),
                     0
                 ) AS pending_target
             FROM tfs_user u

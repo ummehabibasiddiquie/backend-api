@@ -146,7 +146,10 @@ def view_all_qc_history():
             qr.whole_file_path,
             qr.date_of_file_submission,
             qr.created_at,
-            qr.updated_at
+            qr.updated_at,
+            qr.error_list,
+            qr.file_record_count,
+            qr.qc_generated_count
         FROM qc_records qr
         LEFT JOIN task_work_tracker twt ON qr.tracker_id = twt.tracker_id
         LEFT JOIN tfs_user u ON u.user_id = twt.user_id
@@ -166,7 +169,8 @@ def view_all_qc_history():
         query_reworks = f"""
         SELECT 
             *,
-            rework_status as review_status
+            rework_status as review_status,
+            qc_data_generated_count
         FROM qc_rework_history
         WHERE qc_record_id IN ({','.join(map(str, qc_record_ids))})
         ORDER BY qc_rework_id DESC

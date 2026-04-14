@@ -17,8 +17,11 @@ from routes.qc_afd import qc_afd_bp
 from routes.qc_audit import qc_audit_bp
 from routes.qc_rework import qc_rework_bp
 from routes.qc_history_user_based import qc_history_user_bp
+from routes.roster import roster_bp
+from routes.leave import leave_bp
 
-from scheduler import start_scheduler
+# from scheduler import start_scheduler
+from scheduler.roster_scheduler import start_scheduler
 
 
 from flask_cors import CORS
@@ -49,6 +52,8 @@ app.register_blueprint(qc_afd_bp, url_prefix="/qc_afd")
 app.register_blueprint(qc_audit_bp, url_prefix="/qc_audit")
 app.register_blueprint(qc_rework_bp, url_prefix="/qc_rework")
 app.register_blueprint(qc_history_user_bp, url_prefix="/qc_history_user")
+app.register_blueprint(roster_bp, url_prefix="/roster")
+app.register_blueprint(leave_bp, url_prefix="/leave")
 
 # print("\n==== REGISTERED ROUTES ====")
 # for r in app.url_map.iter_rules():
@@ -68,7 +73,8 @@ def home():
 def health():
     return "OK", 200
 
+# ✅ Start scheduler
+start_scheduler()
+
 if __name__ == "__main__":
-    # Start the scheduler
-    start_scheduler()
     app.run(host="0.0.0.0", port=5000, debug=True)

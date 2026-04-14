@@ -420,6 +420,28 @@ def get():
 
             return api_response(200, "Dropdown data fetched successfully", list(projects_map.values()))
 
+        # -------------------- LEAVE TYPES -------------------- #
+        if dropdown_type == "leave types":
+            query = """
+                SELECT leave_type_id, leave_type_name AS label, leave_code, affects_target
+                FROM leave_types
+                ORDER BY leave_type_name
+            """
+            cursor.execute(query)
+            result = cursor.fetchall()
+            return api_response(200, "Dropdown data fetched successfully", result)
+
+        # -------------------- ROSTER STATUS -------------------- #
+        if dropdown_type == "roster status":
+            result = [
+                {"value": "working", "label": "working"},
+                {"value": "wfh", "label": "WFH"},
+                {"value": "half_day", "label": "Half day"},
+                {"value": "leave", "label": "Leave"},
+                {"value": "weekoff", "label": "Weekoff"}
+            ]
+            return api_response(200, "Dropdown data fetched successfully", result)
+
         # -------------------- INVALID -------------------- #
         return api_response(400, "Invalid dropdown_type")
 

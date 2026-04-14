@@ -817,7 +817,7 @@ def view_daily_trackers():
                     twt.user_id,
                     twt.shift,
                     DATE(CAST(twt.date_time AS DATETIME)) AS work_date,
-                    SUM(COALESCE(twt.production, 0) / NULLIF(twt.tenure_target, 0)) AS total_billable_hours_day,
+                    COALESCE(SUM(twt.billable_hours), 0) AS total_billable_hours_day,
                     COUNT(*) AS trackers_count_day
                 FROM task_work_tracker twt
                 LEFT JOIN tfs_user u ON u.user_id = twt.user_id
@@ -830,8 +830,25 @@ def view_daily_trackers():
                     SUM(d.total_billable_hours_day)
                         OVER (PARTITION BY d.user_id ORDER BY d.work_date)
                         AS cumulative_billable_hours_till_day,
-                    COUNT(*) OVER (PARTITION BY d.user_id ORDER BY d.work_date)
-                        AS worked_days_till_day
+                    -- Conditional working days logic based on date
+                    CASE 
+                        -- Before April 2025: Use task_work_tracker count (old logic)
+                        WHEN d.work_date < '2025-04-01' THEN
+                            COUNT(*) OVER (PARTITION BY d.user_id ORDER BY d.work_date)
+                        -- April 2025 onwards: Use roster-based calculation (new logic)
+                        ELSE
+                            DATEDIFF(
+                                d.work_date,
+                                (
+                                    SELECT MIN(work_date) 
+                                    FROM daily d2 
+                                    WHERE d2.user_id = d.user_id 
+                                    AND d2.work_date >= (
+                                        SELECT DATE(CONCAT('01-', %s))
+                                    )
+                                )
+                            ) + 1
+                    END AS worked_days_till_day
                 FROM daily d
             )
             SELECT
@@ -867,40 +884,40 @@ def view_daily_trackers():
                 COALESCE(tqc.qc_score, qr.qc_score) AS qc_score,
                 tqc.assigned_hours AS assigned_hours,
 
-                umt.user_monthly_tracker_id,
-                COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0) AS monthly_target,
-                COALESCE(umt.extra_assigned_hours, 0) AS extra_assigned_hours,
+                r.roster_id,
+                COALESCE(CAST(r.final_target AS DECIMAL(10,2)), 0) AS monthly_target,
+                COALESCE(r.extra_assigned_hours, 0) AS extra_assigned_hours,
                 (
-                  COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0)
-                  + COALESCE(umt.extra_assigned_hours, 0)
+                  COALESCE(CAST(r.final_target AS DECIMAL(10,2)), 0)
+                  + COALESCE(r.extra_assigned_hours, 0)
                 ) AS monthly_total_target,
 
-                CAST(umt.working_days AS SIGNED) AS working_days,
+                CAST(r.working_days AS SIGNED) AS working_days,
 
                 GREATEST(
-                    COALESCE(CAST(umt.working_days AS SIGNED), 0)
+                    COALESCE(CAST(r.working_days AS SIGNED), 0)
                     - COALESCE(dwc.worked_days_till_day, 0),
                     0
                 ) AS pending_days_after_this_day,
 
                 CASE
-                  WHEN umt.user_monthly_tracker_id IS NULL THEN NULL
+                  WHEN r.roster_id IS NULL THEN NULL
                   WHEN GREATEST(
-                        COALESCE(CAST(umt.working_days AS SIGNED), 0)
+                        COALESCE(CAST(r.working_days AS SIGNED), 0)
                         - COALESCE(dwc.worked_days_till_day, 0),
                         0
                       ) = 0 THEN NULL
                   ELSE
                     (
                       (
-                        COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0)
-                        + COALESCE(umt.extra_assigned_hours, 0)
+                        COALESCE(CAST(r.final_target AS DECIMAL(10,2)), 0)
+                        + COALESCE(r.extra_assigned_hours, 0)
                       )
                       - COALESCE(dwc.cumulative_billable_hours_till_day, 0)
                     )
                     / NULLIF(
                         GREATEST(
-                            COALESCE(CAST(umt.working_days AS SIGNED), 0)
+                            COALESCE(CAST(r.working_days AS SIGNED), 0)
                             - COALESCE(dwc.worked_days_till_day, 0),
                             0
                         ),
@@ -926,17 +943,63 @@ def view_daily_trackers():
               ON tqc.user_id = dwc.user_id
              AND tqc.date = DATE_FORMAT(dwc.work_date, '%Y-%m-%d')
 
-            LEFT JOIN user_monthly_tracker umt
-              ON umt.user_id = dwc.user_id
-             AND umt.is_active = 1
-             AND umt.month_year = %s
+            LEFT JOIN (
+                -- Hybrid approach: Use rosters for April 2025 onwards, user_monthly_tracker for before April
+                SELECT 
+                    user_id,
+                    final_target as monthly_target,
+                    working_days,
+                    extra_assigned_hours,
+                    roster_id,
+                    weekoff_days,
+                    holiday_days,
+                    base_target,
+                    final_target,
+                    month_year
+                FROM rosters 
+                WHERE month_year >= '202504'  -- April 2025 onwards
+                UNION ALL
+                SELECT 
+                    user_id,
+                    monthly_target,
+                    working_days,
+                    extra_assigned_hours,
+                    NULL as roster_id,
+                    NULL as weekoff_days,
+                    NULL as holiday_days,
+                    NULL as base_target,
+                    monthly_target as final_target,
+                    month_year
+                FROM user_monthly_tracker
+                WHERE month_year < '202504'   -- Before April 2025
+            ) r
+              ON r.user_id = dwc.user_id
+             AND r.month_year = %s
 
             ORDER BY dwc.work_date DESC, u.user_name ASC
         """
 
-        final_params = list(params) + [month_year]
+        # Debug: Check if rosters data exists for this month
+        debug_query = """
+            SELECT user_id, roster_id, month_year, working_days, final_target
+            FROM rosters 
+            WHERE month_year = %s
+            LIMIT 5
+        """
+        cursor.execute(debug_query, (month_year,))
+        rosters_debug = cursor.fetchall()
+        print(f"DEBUG: Rosters data for {month_year}: {len(rosters_debug)} records")
+        if rosters_debug:
+            print(f"DEBUG: Sample rosters: {[{'user_id': r['user_id'], 'roster_id': r['roster_id']} for r in rosters_debug]}")
+
+        final_params = list(params) + [month_year, month_year]
+        print(f"DEBUG: Tracker query params: {final_params}")
+        print(f"DEBUG: Month year being queried: {month_year}")
         cursor.execute(query, tuple(final_params))
         rows = cursor.fetchall()
+        print(f"DEBUG: Number of rows returned: {len(rows)}")
+        if rows:
+            print(f"DEBUG: User IDs returned: {[r.get('user_id') for r in rows[:5]]}")  # First 5 users
 
         # -------- month_summary
         user_ids = sorted({r.get("user_id") for r in rows if r.get("user_id") is not None})
@@ -956,12 +1019,11 @@ def view_daily_trackers():
                     t.team_name,
 
                     m.mon AS month_year,
-                    umt.user_monthly_tracker_id,
-                    COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0) AS monthly_target,
-                    COALESCE(umt.extra_assigned_hours, 0) AS extra_assigned_hours,
+                    r.roster_id,
+                    COALESCE(CAST(r.final_target AS DECIMAL(10,2)), 0) AS monthly_target,
+                    COALESCE(r.extra_assigned_hours, 0) AS extra_assigned_hours,
                     (
-                      COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0)
-                      + COALESCE(umt.extra_assigned_hours, 0)
+                      COALESCE(CAST(r.final_target AS DECIMAL(10,2)), 0)
                     ) AS monthly_total_target,
                     COALESCE((
                       SELECT SUM(twt3.production / NULLIF(twt3.tenure_target, 0))
@@ -971,39 +1033,54 @@ def view_daily_trackers():
                         AND (YEAR(CAST(twt3.date_time AS DATETIME))*100 + MONTH(CAST(twt3.date_time AS DATETIME))) = m.yyyymm
                     ), 0) AS total_billable_hours_month,
                     CASE
-                      WHEN umt.user_monthly_tracker_id IS NULL THEN NULL
+                      WHEN r.roster_id IS NULL THEN NULL
                       ELSE GREATEST(
-                             COALESCE(CAST(umt.working_days AS SIGNED), 0)
+                             COALESCE(CAST(r.working_days AS SIGNED), 0)
                              - COALESCE((
-                                 SELECT COUNT(DISTINCT DATE(CAST(twt2.date_time AS DATETIME)))
-                                 FROM task_work_tracker twt2
-                                 WHERE twt2.user_id = u.user_id
-                                   AND twt2.is_active = 1
-                                   AND (YEAR(CAST(twt2.date_time AS DATETIME))*100 + MONTH(CAST(twt2.date_time AS DATETIME))) = m.yyyymm
-                                   AND DATE(CAST(twt2.date_time AS DATETIME)) <= m.cutoff
-                               ), 0),
+                                 -- Conditional logic: use different calculations based on date
+                                 CASE 
+                                     -- Before April 2025: Use task_work_tracker count (old logic)
+                                     WHEN m.cutoff < '2025-04-01' THEN
+                                         (SELECT COUNT(DISTINCT DATE(CAST(twt2.date_time AS DATETIME)))
+                                         FROM task_work_tracker twt2
+                                         WHERE twt2.user_id = u.user_id
+                                           AND twt2.is_active = 1
+                                           AND (YEAR(CAST(twt2.date_time AS DATETIME))*100 + MONTH(CAST(twt2.date_time AS DATETIME))) = m.yyyymm
+                                           AND DATE(CAST(twt2.date_time AS DATETIME)) <= m.cutoff)
+                                     -- April 2025 onwards: Use roster-based calculation (new logic)
+                                     ELSE
+                                         DATEDIFF(m.cutoff, DATE(CONCAT('01-', m.mon))) + 1
+                                 END
+                             ), 0),
                              0
                            )
                     END AS pending_days,
                     CASE
-                      WHEN umt.user_monthly_tracker_id IS NULL THEN NULL
+                      WHEN r.roster_id IS NULL THEN NULL
                       WHEN GREATEST(
-                             COALESCE(CAST(umt.working_days AS SIGNED), 0)
+                             COALESCE(CAST(r.working_days AS SIGNED), 0)
                              - COALESCE((
-                                 SELECT COUNT(DISTINCT DATE(CAST(twt2.date_time AS DATETIME)))
-                                 FROM task_work_tracker twt2
-                                 WHERE twt2.user_id = u.user_id
-                                   AND twt2.is_active = 1
-                                   AND (YEAR(CAST(twt2.date_time AS DATETIME))*100 + MONTH(CAST(twt2.date_time AS DATETIME))) = m.yyyymm
-                                   AND DATE(CAST(twt2.date_time AS DATETIME)) <= m.cutoff
-                               ), 0),
+                                 -- Conditional logic: use different calculations based on date
+                                 CASE 
+                                     -- Before April 2025: Use task_work_tracker count (old logic)
+                                     WHEN m.cutoff < '2025-04-01' THEN
+                                         (SELECT COUNT(DISTINCT DATE(CAST(twt2.date_time AS DATETIME)))
+                                         FROM task_work_tracker twt2
+                                         WHERE twt2.user_id = u.user_id
+                                           AND twt2.is_active = 1
+                                           AND (YEAR(CAST(twt2.date_time AS DATETIME))*100 + MONTH(CAST(twt2.date_time AS DATETIME))) = m.yyyymm
+                                           AND DATE(CAST(twt2.date_time AS DATETIME)) <= m.cutoff)
+                                     -- April 2025 onwards: Use roster-based calculation (new logic)
+                                     ELSE
+                                         DATEDIFF(m.cutoff, DATE(CONCAT('01-', m.mon))) + 1
+                                 END
+                             ), 0),
                              0
                            ) = 0 THEN NULL
                       ELSE
                         (
                           (
-                            COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0)
-                            + COALESCE(umt.extra_assigned_hours, 0)
+                            COALESCE(CAST(r.final_target AS DECIMAL(10,2)), 0)
                           )
                           - COALESCE((
                               SELECT SUM(twt3.production / NULLIF(twt3.tenure_target, 0))
@@ -1015,15 +1092,23 @@ def view_daily_trackers():
                         )
                         / NULLIF(
                             GREATEST(
-                              COALESCE(CAST(umt.working_days AS SIGNED), 0)
+                              COALESCE(CAST(r.working_days AS SIGNED), 0)
                               - COALESCE((
-                                  SELECT COUNT(DISTINCT DATE(CAST(twt2.date_time AS DATETIME)))
-                                  FROM task_work_tracker twt2
-                                  WHERE twt2.user_id = u.user_id
-                                    AND twt2.is_active = 1
-                                    AND (YEAR(CAST(twt2.date_time AS DATETIME))*100 + MONTH(CAST(twt2.date_time AS DATETIME))) = m.yyyymm
-                                    AND DATE(CAST(twt2.date_time AS DATETIME)) <= m.cutoff
-                                ), 0),
+                                  -- Conditional logic: use different calculations based on date
+                                  CASE 
+                                      -- Before April 2025: Use task_work_tracker count (old logic)
+                                      WHEN m.cutoff < '2025-04-01' THEN
+                                          (SELECT COUNT(DISTINCT DATE(CAST(twt2.date_time AS DATETIME)))
+                                          FROM task_work_tracker twt2
+                                          WHERE twt2.user_id = u.user_id
+                                            AND twt2.is_active = 1
+                                            AND (YEAR(CAST(twt2.date_time AS DATETIME))*100 + MONTH(CAST(twt2.date_time AS DATETIME))) = m.yyyymm
+                                            AND DATE(CAST(twt2.date_time AS DATETIME)) <= m.cutoff)
+                                      -- April 2025 onwards: Use roster-based calculation (new logic)
+                                      ELSE
+                                          DATEDIFF(m.cutoff, DATE(CONCAT('01-', m.mon))) + 1
+                                  END
+                              ), 0),
                               0
                             ),
                             0
@@ -1045,10 +1130,38 @@ def view_daily_trackers():
                         ELSE DATE_SUB(STR_TO_DATE(CONCAT('01-', %s), '%d-%b%Y'), INTERVAL 1 DAY)
                       END AS cutoff
                 ) m
-                LEFT JOIN user_monthly_tracker umt
-                  ON umt.user_id = u.user_id
-                 AND umt.is_active = 1
-                 AND umt.month_year = m.mon
+                LEFT JOIN (
+                    -- Hybrid approach: Use rosters for April 2025 onwards, user_monthly_tracker for before April
+                    SELECT 
+                        user_id,
+                        final_target as monthly_target,
+                        working_days,
+                        extra_assigned_hours,
+                        roster_id,
+                        weekoff_days,
+                        holiday_days,
+                        base_target,
+                        final_target,
+                        month_year
+                    FROM rosters 
+                    WHERE month_year >= '202504'  -- April 2025 onwards
+                    UNION ALL
+                    SELECT 
+                        user_id,
+                        monthly_target,
+                        working_days,
+                        extra_assigned_hours,
+                        NULL as roster_id,
+                        NULL as weekoff_days,
+                        NULL as holiday_days,
+                        NULL as base_target,
+                        monthly_target as final_target,
+                        month_year
+                    FROM user_monthly_tracker
+                    WHERE month_year < '202504'   -- Before April 2025
+                ) r
+                  ON r.user_id = u.user_id
+                 AND r.month_year = m.mon
                 WHERE u.user_id IN ({in_ph})
                   -- ✅ team filter applied to summary too
                   AND (%s IS NULL OR u.team_id = %s)

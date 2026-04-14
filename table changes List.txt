@@ -23,3 +23,218 @@ ALTER TABLE `task` ADD `qc_percentage` INT NOT NULL AFTER `important_columns`;
 24/3/2026
 ALTER TABLE tfs_user 
 ADD COLUMN deactivated_at DATETIME NULL;
+
+alter table project add column ai_evaluation tinyint default 0 not null;
+
+alter table tfs_user add column gemini_api_key varchar(255) null after user_password;
+
+alter table project add column duplicate_check tinyint default 0 not null;
+
+alter table task_work_tracker add column qc_status int not null default 0 after shift;
+
+09/04/2026
+
+CREATE TABLE rosters (
+    roster_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    month_year VARCHAR(10) NOT NULL, -- APR2026
+
+    total_days INT NOT NULL,
+    working_days INT DEFAULT 0,
+    weekoff_days INT DEFAULT 0,
+    holiday_days INT DEFAULT 0,
+
+    target_leaves INT DEFAULT 0,
+    base_target DECIMAL(10,2) DEFAULT 0.00,
+    extra_assigned_hours DECIMAL(10,2) DEFAULT 0.00,
+    final_target DECIMAL(10,2) DEFAULT 0.00,
+
+    status ENUM('draft','active','locked') DEFAULT 'draft',
+
+    created_by INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    UNIQUE KEY unique_user_month (user_id, month_year),
+    FOREIGN KEY (user_id) REFERENCES tfs_user(user_id)
+);
+
+CREATE TABLE roster_days (
+    roster_day_id INT AUTO_INCREMENT PRIMARY KEY,
+    roster_id INT NOT NULL,
+    user_id INT NOT NULL,
+    date DATE NOT NULL,
+
+    day_type ENUM('working','weekoff','holiday','leave') DEFAULT 'working',
+    shift ENUM('day','night') DEFAULT 'day',
+
+    is_leave TINYINT(1) DEFAULT 0,
+    leave_type_id INT NULL,
+
+    is_target_leave TINYINT(1) DEFAULT 0,
+    is_planned_leave TINYINT(1) DEFAULT 0,
+
+    is_emergency TINYINT(1) DEFAULT 0,
+
+    remarks VARCHAR(255),
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    UNIQUE KEY unique_user_date (user_id, date),
+
+    FOREIGN KEY (roster_id) REFERENCES rosters(roster_id),
+    FOREIGN KEY (user_id) REFERENCES tfs_user(user_id)
+);
+
+CREATE TABLE roster_day_drafts (
+    draft_id INT AUTO_INCREMENT PRIMARY KEY,
+
+    roster_day_id INT,
+    roster_id INT NOT NULL,
+    user_id INT NOT NULL,
+    date DATE NOT NULL,
+
+    field_name VARCHAR(100) NOT NULL,
+    old_value VARCHAR(255),
+    new_value VARCHAR(255),
+
+    edited_by INT NOT NULL,
+
+    status ENUM('draft','pending','approved','rejected') DEFAULT 'draft',
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (roster_id) REFERENCES rosters(roster_id),
+    FOREIGN KEY (user_id) REFERENCES tfs_user(user_id)
+);
+
+
+CREATE TABLE leave_types (
+    leave_type_id INT AUTO_INCREMENT PRIMARY KEY,
+    leave_type_name VARCHAR(100) NOT NULL,
+    leave_code VARCHAR(20) UNIQUE,
+
+    affects_target TINYINT(1) DEFAULT 1,
+    requires_approval TINYINT(1) DEFAULT 1,
+
+    max_days_per_month INT DEFAULT 0,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE leaves (
+    leave_id INT AUTO_INCREMENT PRIMARY KEY,
+
+    user_id INT NOT NULL,
+    leave_type_id INT NOT NULL,
+
+    from_date DATE NOT NULL,
+    to_date DATE NOT NULL,
+    total_days INT NOT NULL,
+
+    is_half_day TINYINT(1) DEFAULT 0,
+    half_day_type ENUM('first','second') DEFAULT NULL,
+
+    reason TEXT,
+
+    is_planned_leave TINYINT(1) DEFAULT 0,
+    is_emergency TINYINT(1) DEFAULT 0,
+
+    is_target_leave TINYINT(1) DEFAULT 0,
+
+    added_date DATE NOT NULL,
+
+    status ENUM('pending','approved','rejected','cancelled') DEFAULT 'pending',
+
+    applied_by INT,
+    approved_by INT,
+    approved_at TIMESTAMP,
+    approval_remarks VARCHAR(255),
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES tfs_user(user_id),
+    FOREIGN KEY (leave_type_id) REFERENCES leave_types(leave_type_id)
+);
+
+CREATE TABLE holidays (
+    holiday_id INT AUTO_INCREMENT PRIMARY KEY,
+    holiday_name VARCHAR(100),
+    holiday_date DATE UNIQUE,
+    is_optional TINYINT(1) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE target_change_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT,
+    month_year VARCHAR(10),
+
+    old_target DECIMAL(10,2),
+    new_target DECIMAL(10,2),
+
+    reason VARCHAR(255),
+
+    changed_by INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE roster_day_drafts (
+    draft_id INT AUTO_INCREMENT PRIMARY KEY,
+
+    roster_day_id INT,
+    roster_id INT NOT NULL,
+    user_id INT NOT NULL,
+    date DATE NOT NULL,
+
+    field_name VARCHAR(50) NOT NULL,
+    old_value VARCHAR(255),
+    new_value VARCHAR(255),
+
+    edited_by INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    is_submitted TINYINT(1) DEFAULT 0,
+
+    FOREIGN KEY (roster_id) REFERENCES rosters(roster_id),
+    FOREIGN KEY (user_id) REFERENCES tfs_user(user_id)
+);
+
+CREATE INDEX idx_user_month ON rosters(user_id, month_year);
+CREATE INDEX idx_leave_user ON leaves(user_id);
+CREATE INDEX idx_roster_date ON roster_days(user_id, date);
+
+INSERT INTO leave_types (leave_type_name, leave_code, affects_target, requires_approval) VALUES
+('Planned Leave', 'PL', 1, 1),
+('Unplanned Leave', 'UPL', 1, 1),
+('Sick Leave', 'SL', 0, 0),
+('Casual Leave', 'CL', 1, 1),
+('Privilege Leave', 'PV', 1, 1),
+('Maternity Leave', 'ML', 0, 0),
+('Paternity Leave', 'PTL', 0, 0),
+('Bereavement Leave', 'BL', 0, 0),
+('Compensatory Off', 'CO', 0, 0),
+('Work From Home', 'WFH', 0, 1);
+
+INSERT INTO holidays (holiday_name, holiday_date) VALUES
+('Makar Sankranti', '2026-01-14'),
+('Republic Day', '2026-01-26'),
+('Holi (Dhuleti)', '2026-03-04'),
+('Ramadan Eid (Eid-Al-Fitr)', '2026-03-20'),
+('Independence Day', '2026-08-15'),
+('Ganesh Visarjan', '2026-09-25'),
+('Diwali', '2026-11-08'),
+('Additional Holiday', '2026-11-09'),
+('Samvat New Year', '2026-11-10');
+
+ALTER TABLE roster_day_drafts
+ADD COLUMN changes_json JSON,
+ADD COLUMN old_json JSON;
+
+ALTER TABLE roster_days
+ADD UNIQUE KEY unique_user_date (user_id, date);
+
+ALTER TABLE `roster_days` CHANGE `day_type` `day_type` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL;
