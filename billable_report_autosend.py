@@ -356,7 +356,7 @@ def fetch_data():
 
             avg_qc = avg_qc_map.get(uid)
 
-            assigned = 0 if is_team_agent(u) else assigned_map.get(uid, 0)
+            assigned = 0 if (is_team_agent(u) or worked == 0) else assigned_map.get(uid, 0)
 
             u.update(
                 {
