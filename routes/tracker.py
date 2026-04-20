@@ -595,25 +595,18 @@ def view_trackers():
         # -----------------------------
         # Totals
         # -----------------------------
-        # Total assigned hours from temp_qc but only for dates where trackers exist
-        assigned_query = """
-            SELECT COALESCE(SUM(tqc.assigned_hours), 0) AS total_assigned
-            FROM task_work_tracker twt
-            INNER JOIN temp_qc tqc
-                ON tqc.user_id = twt.user_id
-                AND DATE(tqc.date) = DATE(CAST(twt.date_time AS DATETIME))
-            WHERE twt.is_active = 1
-        """
+        # Total assigned hours from temp_qc
+        assigned_query = "SELECT COALESCE(SUM(assigned_hours),0) AS total_assigned FROM temp_qc WHERE 1=1"
         assigned_params = []
 
         if trackers:
             user_ids = [t["user_id"] for t in trackers if t.get("user_id")]
             in_ph = ",".join(["%s"]*len(user_ids))
-            assigned_query += f" AND twt.user_id IN ({in_ph})"
+            assigned_query += f" AND user_id IN ({in_ph})"
             assigned_params.extend(user_ids)
 
         if data.get("date_from") and data.get("date_to"):
-            assigned_query += " AND DATE(CAST(twt.date_time AS DATETIME)) BETWEEN %s AND %s"
+            assigned_query += " AND DATE(date) BETWEEN %s AND %s"
             assigned_params.extend([data["date_from"], data["date_to"]])
 
         cursor.execute(assigned_query, tuple(assigned_params))
@@ -872,7 +865,7 @@ def view_daily_trackers():
 
                 -- QC data from separate tables (temp_qc takes priority for historical data)
                 COALESCE(tqc.qc_score, qr.qc_score) AS qc_score,
-                COALESCE(tqc.assigned_hours, 0) AS assigned_hours,
+                tqc.assigned_hours AS assigned_hours,
 
                 umt.user_monthly_tracker_id,
                 COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0) AS monthly_target,
