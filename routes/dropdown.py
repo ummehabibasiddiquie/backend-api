@@ -1,6 +1,7 @@
 from flask import Blueprint, request
 from utils.response import api_response
 from config import get_db_connection
+from datetime import datetime, timedelta
 
 dropdown_bp = Blueprint("dropdown", __name__)
 
@@ -40,6 +41,10 @@ def get():
         return api_response(400, "dropdown_type is required")
 
     dropdown_type = (data["dropdown_type"] or "").strip().lower()
+
+    # Calculate month start and end for deactivated_at logic
+    month_start = datetime.now().replace(day=1)
+    month_end = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(seconds=1)
 
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
@@ -149,16 +154,23 @@ def get():
                     FROM tfs_user u
                     JOIN user_role r ON r.role_id = u.role_id
                     JOIN project p ON p.project_id = %s
-                    WHERE u.is_active = 1
-                      AND u.is_delete = 1
+                    WHERE u.is_delete = 1
                       AND r.is_active = 1
                       AND LOWER(r.role_name) = %s
+                      AND (
+                        u.is_active = 1
+                        OR (
+                            u.is_active = 0
+                            AND u.deactivated_at IS NOT NULL
+                            AND u.deactivated_at BETWEEN %s AND %s
+                        )
+                      )
                       AND (
                         FIND_IN_SET(CAST(u.user_id AS CHAR), REPLACE(REPLACE(REPLACE(REPLACE(p.project_team_id,'[',''),']',''), '"', ''),' ','')) > 0
                       )
                     ORDER BY u.user_name
                 """
-                params = (project_id, dropdown_type)
+                params = (project_id, dropdown_type, month_start, month_end)
                 cursor.execute(query, params)
                 result = cursor.fetchall()
                 for item in result:
@@ -175,16 +187,23 @@ def get():
                     FROM tfs_user u
                     JOIN user_role r ON r.role_id = u.role_id
                     JOIN project p ON p.project_id = %s
-                    WHERE u.is_active = 1
-                      AND u.is_delete = 1
+                    WHERE u.is_delete = 1
                       AND r.is_active = 1
                       AND LOWER(r.role_name) = %s
+                      AND (
+                        u.is_active = 1
+                        OR (
+                            u.is_active = 0
+                            AND u.deactivated_at IS NOT NULL
+                            AND u.deactivated_at BETWEEN %s AND %s
+                        )
+                      )
                       AND (
                         FIND_IN_SET(CAST(u.user_id AS CHAR), REPLACE(REPLACE(REPLACE(REPLACE(p.asst_project_manager_id,'[',''),']',''), '"', ''),' ','')) > 0
                       )
                     ORDER BY u.user_name
                 """
-                params = (project_id, dropdown_type)
+                params = (project_id, dropdown_type, month_start, month_end)
                 cursor.execute(query, params)
                 result = cursor.fetchall()
                 for item in result:
@@ -212,13 +231,19 @@ def get():
                         SELECT u.user_id, u.user_name AS label
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
-                        WHERE u.is_active = 1
-                        AND u.is_delete = 1
+                        WHERE u.is_delete = 1
                         AND r.is_active = 1
                         AND LOWER(r.role_name) = 'agent'
+                        AND (
+                            u.is_active = 1
+                            OR (
+                                u.is_active = 0
+                                AND u.deactivated_at IS NOT NULL
+                                AND u.deactivated_at BETWEEN %s AND %s
+                            )
+                        )
                     """
-
-                    params = []
+                    params = [month_start, month_end]
 
                     if team_id:
                         query += f" AND FIND_IN_SET(%s, {clean_team})"
@@ -232,14 +257,21 @@ def get():
                         SELECT u.user_id, u.user_name AS label
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
-                        WHERE u.is_active = 1
-                        AND u.is_delete = 1
+                        WHERE u.is_delete = 1
                         AND r.is_active = 1
                         AND LOWER(r.role_name) = 'agent'
+                        AND (
+                            u.is_active = 1
+                            OR (
+                                u.is_active = 0
+                                AND u.deactivated_at IS NOT NULL
+                                AND u.deactivated_at BETWEEN %s AND %s
+                            )
+                        )
                         AND FIND_IN_SET(%s, {clean_pm})
                     """
 
-                    params = [logged_in_user_id]
+                    params = [month_start, month_end, logged_in_user_id]
 
                     if team_id:
                         query += f" AND FIND_IN_SET(%s, {clean_team})"
@@ -253,14 +285,21 @@ def get():
                         SELECT u.user_id, u.user_name AS label
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
-                        WHERE u.is_active = 1
-                        AND u.is_delete = 1
+                        WHERE u.is_delete = 1
                         AND r.is_active = 1
                         AND LOWER(r.role_name) = 'agent'
+                        AND (
+                            u.is_active = 1
+                            OR (
+                                u.is_active = 0
+                                AND u.deactivated_at IS NOT NULL
+                                AND u.deactivated_at BETWEEN %s AND %s
+                            )
+                        )
                         AND FIND_IN_SET(%s, {clean_am})
                         ORDER BY u.user_name
                     """
-                    params = (logged_in_user_id,)
+                    params = (month_start, month_end, logged_in_user_id)
 
                 # ---------------- QA ---------------- #
                 elif user_role == "qa":
@@ -268,14 +307,21 @@ def get():
                         SELECT u.user_id, u.user_name AS label
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
-                        WHERE u.is_active = 1
-                        AND u.is_delete = 1
+                        WHERE u.is_delete = 1
                         AND r.is_active = 1
                         AND LOWER(r.role_name) = 'agent'
+                        AND (
+                            u.is_active = 1
+                            OR (
+                                u.is_active = 0
+                                AND u.deactivated_at IS NOT NULL
+                                AND u.deactivated_at BETWEEN %s AND %s
+                            )
+                        )
                         AND FIND_IN_SET(%s, {clean_qa})
                         ORDER BY u.user_name
                     """
-                    params = (logged_in_user_id,)
+                    params = (month_start, month_end, logged_in_user_id)
 
                 else:
                     return api_response(403, "Not allowed")
@@ -296,13 +342,20 @@ def get():
                         u.user_name AS label
                     FROM tfs_user u
                     JOIN user_role r ON r.role_id = u.role_id
-                    WHERE u.is_active = 1
-                      AND u.is_delete = 1
+                    WHERE u.is_delete = 1
                       AND r.is_active = 1
                       AND LOWER(r.role_name) = %s
+                      AND (
+                        u.is_active = 1
+                        OR (
+                            u.is_active = 0
+                            AND u.deactivated_at IS NOT NULL
+                            AND u.deactivated_at BETWEEN %s AND %s
+                        )
+                      )
                     ORDER BY u.user_name
                 """
-                params = (dropdown_type,)
+                params = (dropdown_type, month_start, month_end)
                 cursor.execute(query, params)
                 result = cursor.fetchall()
                 for item in result:
