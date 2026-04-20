@@ -338,15 +338,6 @@ def fetch_data():
 
             qc_data = qc_map.get(uid, {})
 
-            # print(qc_data.get("qc_date"))
-            qc_date = qc_data.get("qc_date")
-            if qc_date and isinstance(qc_date, datetime):
-                qc_date = qc_date.strftime("%Y-%m-%d")
-
-            avg_qc = avg_qc_map.get(uid)
-            # assigned = assigned_map.get(uid, 0)
-            assigned = 0 if is_team_agent(u) else assigned_map.get(uid, 0)
-
             monthly_target = float(u["monthly_target"])
             extra = float(u["extra_assigned_hours"])
             working_days = float(u["working_days"])
@@ -358,6 +349,10 @@ def fetch_data():
             remaining_days = max(0, working_days - days_worked)
 
             daily_required = pending / remaining_days if remaining_days else 0
+
+            avg_qc = avg_qc_map.get(uid)
+
+            assigned = 0 if is_team_agent(u) else assigned_map.get(uid, 0)
 
             u.update(
                 {
