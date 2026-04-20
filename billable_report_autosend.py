@@ -338,6 +338,10 @@ def fetch_data():
 
             qc_data = qc_map.get(uid, {})
 
+            qc_date = qc_data.get("qc_date")
+            if qc_date and isinstance(qc_date, datetime):
+                qc_date = qc_date.strftime("%Y-%m-%d")
+
             monthly_target = float(u["monthly_target"])
             extra = float(u["extra_assigned_hours"])
             working_days = float(u["working_days"])
