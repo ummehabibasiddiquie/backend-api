@@ -595,22 +595,25 @@ def view_trackers():
         # -----------------------------
         # Totals
         # -----------------------------
-        # Total assigned hours based on tracker existence (9 hours per day with trackers)
+        # Total assigned hours from temp_qc but only for dates where trackers exist
         assigned_query = """
-            SELECT COALESCE(COUNT(DISTINCT user_id, DATE(CAST(date_time AS DATETIME))) * 9, 0) AS total_assigned 
-            FROM task_work_tracker 
-            WHERE is_active = 1
+            SELECT COALESCE(SUM(tqc.assigned_hours), 0) AS total_assigned
+            FROM task_work_tracker twt
+            INNER JOIN temp_qc tqc
+                ON tqc.user_id = twt.user_id
+                AND DATE(tqc.date) = DATE(CAST(twt.date_time AS DATETIME))
+            WHERE twt.is_active = 1
         """
         assigned_params = []
 
         if trackers:
             user_ids = [t["user_id"] for t in trackers if t.get("user_id")]
             in_ph = ",".join(["%s"]*len(user_ids))
-            assigned_query += f" AND user_id IN ({in_ph})"
+            assigned_query += f" AND twt.user_id IN ({in_ph})"
             assigned_params.extend(user_ids)
 
         if data.get("date_from") and data.get("date_to"):
-            assigned_query += " AND DATE(CAST(date_time AS DATETIME)) BETWEEN %s AND %s"
+            assigned_query += " AND DATE(CAST(twt.date_time AS DATETIME)) BETWEEN %s AND %s"
             assigned_params.extend([data["date_from"], data["date_to"]])
 
         cursor.execute(assigned_query, tuple(assigned_params))
@@ -869,12 +872,7 @@ def view_daily_trackers():
 
                 -- QC data from separate tables (temp_qc takes priority for historical data)
                 COALESCE(tqc.qc_score, qr.qc_score) AS qc_score,
-                
-                -- Assigned hours based on tracker existence (9 hours if tracker exists for that day)
-                CASE 
-                    WHEN dwc.trackers_count_day > 0 THEN 9 
-                    ELSE 0 
-                END AS assigned_hours,
+                COALESCE(tqc.assigned_hours, 0) AS assigned_hours,
 
                 umt.user_monthly_tracker_id,
                 COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), 0) AS monthly_target,
