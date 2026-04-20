@@ -19,21 +19,21 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 RECIPIENTS = [
     "ummehabiba.siddiquie@transformsolution.net",
-    "mohsin.pathan@transformsolution.net",
-    "dharmesh.jotania@transformsolution.net",
-    "venkateshwaran.iyer@transformsolution.net",
-    "yahya.irani@transformsolution.net",
-    "amit.mandviwala@transformsolution.net",
-    "sriman.narayan@transformsolution.net",
-    "shirin.gafoor@transformsolution.net",
-    "avinash.dwivedi@transformsolution.net",
-    "jimil.kinariwala@transformsolution.net",
-    "manas.pradhan@transformsolution.net"
+    # "mohsin.pathan@transformsolution.net",
+    # "dharmesh.jotania@transformsolution.net",
+    # "venkateshwaran.iyer@transformsolution.net",
+    # "yahya.irani@transformsolution.net",
+    # "amit.mandviwala@transformsolution.net",
+    # "sriman.narayan@transformsolution.net",
+    # "shirin.gafoor@transformsolution.net",
+    # "avinash.dwivedi@transformsolution.net",
+    # "jimil.kinariwala@transformsolution.net",
+    # "manas.pradhan@transformsolution.net"
 ]
 
 CC_RECIPIENTS = [
-    "ashfaq@transformsolution.com",
-    "seema@transformsolution.com"
+    # "ashfaq@transformsolution.com",
+    # "seema@transformsolution.com"
 ]
 
 
@@ -85,12 +85,23 @@ def fetch_data():
         # USERS
         # -------------------------
 
+        # Calculate month start and end for deactivated_at logic
+        month_start = report_date.replace(day=1)
+        month_end = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(seconds=1)
+        
         cursor.execute(
             """
             SELECT u.user_id, u.user_name, t.team_name,
                 COALESCE(umt.monthly_target,0) AS monthly_target,
                 COALESCE(umt.extra_assigned_hours,0) AS extra_assigned_hours,
-                COALESCE(umt.working_days,0) AS working_days
+                COALESCE(umt.working_days,0) AS working_days,
+                u.is_active,
+                u.deactivated_at,
+                CASE 
+                    WHEN u.is_active = 1 THEN 'Active'
+                    WHEN u.is_active = 0 AND u.deactivated_at IS NOT NULL THEN 'Exited'
+                    ELSE 'Inactive'
+                END AS exit_status
             FROM tfs_user u
             JOIN user_role r ON u.role_id = r.role_id
             LEFT JOIN team t ON u.team_id = t.team_id
@@ -98,11 +109,17 @@ def fetch_data():
                 ON umt.user_id = u.user_id
                 AND umt.is_active=1
                 AND umt.month_year=%s
-            WHERE u.is_delete != 0
-            AND u.is_active=1
-            AND u.is_delete != 0
+            WHERE u.is_delete = 1
             AND r.role_name='Agent'
             AND t.team_name IN ('A','B')
+            AND (
+                u.is_active = 1
+                OR (
+                    u.is_active = 0
+                    AND u.deactivated_at IS NOT NULL
+                    AND u.deactivated_at BETWEEN %s AND %s
+                )
+            )
             ORDER BY
                 t.team_name,
                 CASE 
@@ -111,7 +128,7 @@ def fetch_data():
                 END,
                 u.user_name
             """,
-            (report_month,),
+            (report_month, month_start, month_end),
         )
 
         users = cursor.fetchall()
@@ -174,20 +191,10 @@ def fetch_data():
             )
             qc_user_ids = {r["user_id"] for r in cursor.fetchall()}
 
-        # Remove absent agents but keep team agents AND users with QC scores
-        active_user_ids = set(daily_map.keys())
-
-        users = [
-            u for u in users
-            if (u["user_id"] in active_user_ids or is_team_agent(u) or u["user_id"] in qc_user_ids)
-        ]
-
+        # Show all users including absent ones (no filtering)
+        # All users will appear with 0 production if they have no trackers
         if not users:
             return report_date, []
-
-        # rebuild user_ids AFTER filtering
-        user_ids = [u["user_id"] for u in users]
-        in_ph = ",".join(["%s"] * len(user_ids))
 
         # -------------------------
         # MTD HOURS
@@ -403,6 +410,7 @@ def generate_html(report_date, data_rows):
 
     <tr style="background:#FFD966;font-weight:bold">
         <th rowspan="2">Team Member</th>
+        <th rowspan="2">Exit Status</th>
         <th colspan="4">Daily Report</th>
         <th colspan="4">MTD Report</th>
     </tr>
@@ -464,6 +472,7 @@ def generate_html(report_date, data_rows):
             html += f"""
             <tr>
             <td>{u['user_name']}</td>
+            <td align="center">{u.get('exit_status', '')}</td>
             <td align="right">{"" if is_team_agent(u) else f"{assigned:.2f}"}</td>
             <td align="right">{worked:.2f}</td>
             <td align="right">{f"{u['qc_score']:.2f}" if u.get('qc_score') is not None else ""}</td>
@@ -494,6 +503,7 @@ def generate_html(report_date, data_rows):
         html += f"""
         <tr style="font-weight:bold;background:#C9DAF8">
         <td>Team {team} Total</td>
+        <td></td>
         <td align="right">{team_assigned:.2f}</td>
         <td align="right">{team_worked:.2f}</td>
         <td></td>
@@ -508,6 +518,7 @@ def generate_html(report_date, data_rows):
     html += f"""
         <tr style="font-weight:bold;background:#A4C2F4">
         <td>Grand Total</td>
+        <td></td>
         <td align="right">{grand_assigned:.2f}</td>
         <td align="right">{grand_worked:.2f}</td>
         <td></td>
