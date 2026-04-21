@@ -22,18 +22,18 @@ RECIPIENTS = [
     "mohsin.pathan@transformsolution.net",
     "dharmesh.jotania@transformsolution.net",
     "venkateshwaran.iyer@transformsolution.net",
-    # "yahya.irani@transformsolution.net",
-    # "amit.mandviwala@transformsolution.net",
-    # "sriman.narayan@transformsolution.net",
-    # "shirin.gafoor@transformsolution.net",
-    # "avinash.dwivedi@transformsolution.net",
-    # "jimil.kinariwala@transformsolution.net",
-    # "manas.pradhan@transformsolution.net"
+    "yahya.irani@transformsolution.net",
+    "amit.mandviwala@transformsolution.net",
+    "sriman.narayan@transformsolution.net",
+    "shirin.gafoor@transformsolution.net",
+    "avinash.dwivedi@transformsolution.net",
+    "jimil.kinariwala@transformsolution.net",
+    "manas.pradhan@transformsolution.net"
 ]
 
 CC_RECIPIENTS = [
-    # "ashfaq@transformsolution.com",
-    # "seema@transformsolution.com"
+    "ashfaq@transformsolution.com",
+    "seema@transformsolution.com"
 ]
 
 
@@ -75,7 +75,7 @@ def fetch_data():
         report_date = today - timedelta(days=1)
 
         # TEST DATE
-        report_date = datetime.strptime("2026-04-17", "%Y-%m-%d").date()
+        # report_date = datetime.strptime("2026-04-17", "%Y-%m-%d").date()
         
         report_month = report_date.strftime("%b%Y").upper()
 
