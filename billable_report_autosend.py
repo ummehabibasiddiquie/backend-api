@@ -360,7 +360,7 @@ def fetch_data():
 
             # Match tracker API logic: return NULL if no monthly target or remaining days = 0
             daily_required = None
-            if monthly_target > 0 and remaining_days > 0:
+            if remaining_days > 0:
                 daily_required = pending / remaining_days
 
             avg_qc = avg_qc_map.get(uid)
