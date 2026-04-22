@@ -224,7 +224,7 @@ def fetch_data():
             SELECT twt.user_id,
             SUM(
                 CASE
-                    WHEN tq.assigned_hours <= 4.5 THEN 0.5
+                    WHEN tq.assigned_hours = 4.5 THEN 0.5
                     ELSE 1
                 END
             ) AS days_worked
@@ -357,9 +357,10 @@ def fetch_data():
             days_worked = days_worked_map.get(uid, 0)
             remaining_days = max(0, working_days - days_worked)
 
-            # Match tracker API logic: return NULL if no monthly target or remaining days = 0
+            # Match tracker API logic: return NULL only if monthly_target is None (not configured) or remaining_days = 0
+            # If monthly_target is 0 (but configured), still calculate
             daily_required = None
-            if monthly_target > 0 and remaining_days > 0:
+            if u.get("monthly_target") is not None and remaining_days > 0:
                 daily_required = pending / remaining_days
 
             avg_qc = avg_qc_map.get(uid)
