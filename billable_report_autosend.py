@@ -19,9 +19,9 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 RECIPIENTS = [
     "ummehabiba.siddiquie@transformsolution.net",
-    "mohsin.pathan@transformsolution.net",
-    "dharmesh.jotania@transformsolution.net",
-    "venkateshwaran.iyer@transformsolution.net",
+    # "mohsin.pathan@transformsolution.net",
+    # "dharmesh.jotania@transformsolution.net",
+    # "venkateshwaran.iyer@transformsolution.net",
     # "yahya.irani@transformsolution.net",
     # "amit.mandviwala@transformsolution.net",
     # "sriman.narayan@transformsolution.net",
@@ -222,7 +222,12 @@ def fetch_data():
         cursor.execute(
             f"""
             SELECT twt.user_id,
-            COUNT(DISTINCT DATE(twt.date_time)) AS days_worked
+            SUM(
+                CASE
+                    WHEN tq.assigned_hours <= 4.5 THEN 0.5
+                    ELSE 1
+                END
+            ) AS days_worked
             FROM task_work_tracker twt
             INNER JOIN temp_qc tq
                 ON tq.user_id = twt.user_id
@@ -238,7 +243,7 @@ def fetch_data():
         )
 
         days_worked_map = {
-            r["user_id"]: int(r["days_worked"]) for r in cursor.fetchall()
+            r["user_id"]: float(r["days_worked"]) for r in cursor.fetchall()
         }
 
         qc_map = {}
