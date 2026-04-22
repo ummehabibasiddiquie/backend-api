@@ -225,16 +225,12 @@ def fetch_data():
                 twt.user_id,
                 SUM(
                     CASE
-                        WHEN tq.assigned_hours = 4.5 THEN 0.5
+                        WHEN (twt.production / NULLIF(twt.tenure_target,0)) IS NULL OR (twt.production / NULLIF(twt.tenure_target,0)) = 0 THEN 0
+                        WHEN (twt.production / NULLIF(twt.tenure_target,0)) = 4.5 THEN 0.5
                         ELSE 1
                     END
                 ) AS days_worked
             FROM task_work_tracker twt
-            INNER JOIN temp_qc tq
-                ON tq.user_id = twt.user_id
-                AND DATE(tq.date) = DATE(twt.date_time)
-                AND tq.assigned_hours IS NOT NULL
-                AND tq.assigned_hours > 0
             WHERE DATE(twt.date_time) BETWEEN %s AND %s
             AND twt.user_id IN ({in_ph})
             AND twt.is_active=1
@@ -244,7 +240,7 @@ def fetch_data():
         )
 
         days_worked_map = {
-            r["user_id"]: int(r["days_worked"]) for r in cursor.fetchall()
+            r["user_id"]: float(r["days_worked"]) for r in cursor.fetchall()
         }
 
         qc_map = {}
