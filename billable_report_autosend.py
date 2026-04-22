@@ -92,7 +92,6 @@ def fetch_data():
         cursor.execute(
             """
             SELECT u.user_id, u.user_name, t.team_name,
-                umt.user_monthly_tracker_id,
                 COALESCE(umt.monthly_target,0) AS monthly_target,
                 COALESCE(umt.extra_assigned_hours,0) AS extra_assigned_hours,
                 COALESCE(umt.working_days,0) AS working_days,
@@ -223,12 +222,7 @@ def fetch_data():
         cursor.execute(
             f"""
             SELECT twt.user_id,
-            SUM(
-                CASE
-                    WHEN tq.assigned_hours = 4.5 THEN 0.5
-                    ELSE 1
-                END
-            ) AS days_worked
+            COUNT(DISTINCT DATE(twt.date_time)) AS days_worked
             FROM task_work_tracker twt
             INNER JOIN temp_qc tq
                 ON tq.user_id = twt.user_id
@@ -244,7 +238,7 @@ def fetch_data():
         )
 
         days_worked_map = {
-            r["user_id"]: float(r["days_worked"]) for r in cursor.fetchall()
+            r["user_id"]: int(r["days_worked"]) for r in cursor.fetchall()
         }
 
         qc_map = {}
@@ -348,31 +342,20 @@ def fetch_data():
             if qc_date and isinstance(qc_date, datetime):
                 qc_date = qc_date.strftime("%Y-%m-%d")
 
-            monthly_target = float(u["monthly_target"] or 0)
-            extra = float(u["extra_assigned_hours"] or 0)
-
-            working_days = u["working_days"]
-            working_days = float(working_days) if working_days is not None else 0
+            monthly_target = float(u["monthly_target"])
+            extra = float(u["extra_assigned_hours"])
+            working_days = float(u["working_days"])
 
             monthly_goal = monthly_target + extra
+            pending = max(0, monthly_goal - mtd)
 
-            # MTD worked hours
-            mtd = mtd_map.get(uid, 0)
-
-            # Days worked (same logic you already have)
             days_worked = days_worked_map.get(uid, 0)
+            remaining_days = max(0, working_days - days_worked)
 
-            # ✅ Match API logic
-            pending_days = max(0, working_days - days_worked)
-
-            # Remaining hours
-            pending_hours = max(0, monthly_goal - mtd)
-
-            # ✅ FINAL FIX
-            daily_required = (
-                pending_hours / pending_days
-                if pending_days > 0 else None
-            )
+            # Match tracker API logic: return NULL if no monthly target or remaining days = 0
+            daily_required = None
+            if monthly_target > 0 and remaining_days > 0:
+                daily_required = pending / remaining_days
 
             avg_qc = avg_qc_map.get(uid)
 
@@ -387,7 +370,7 @@ def fetch_data():
                     "qc_date": qc_date,
                     "avg_qc_score": avg_qc,
                     "monthly_goal": monthly_goal,
-                    "pending_goal": pending_hours,
+                    "pending_goal": pending,
                     "daily_required_hours": daily_required,
                 }
             )
@@ -495,7 +478,7 @@ def generate_html(report_date, data_rows):
             <td align="right">{"" if is_team_agent(u) else f"{assigned:.2f}"}</td>
             <td align="right">{worked:.2f}</td>
             <td align="right">{f"{u['qc_score']:.2f}" if u.get('qc_score') is not None else ""}</td>
-            <td align="right">{f"{required:.2f}" if required is not None else ""}</td>
+            <td align="right">{required:.2f}</td>
             <td align="right">{mtd:.2f}</td>
             <td align="right">{goal:.2f}</td>
             <td align="right">{pending:.2f}</td>
@@ -506,7 +489,7 @@ def generate_html(report_date, data_rows):
             if not is_team_agent(u):
                 team_assigned += assigned
             team_worked += worked
-            team_required += required if required is not None else 0
+            team_required += required
             team_mtd += mtd
             team_goal += goal
             team_pending += pending
@@ -514,7 +497,7 @@ def generate_html(report_date, data_rows):
             if not is_team_agent(u):
                 grand_assigned += assigned
             grand_worked += worked
-            grand_required += required if required is not None else 0
+            grand_required += required
             grand_mtd += mtd
             grand_goal += goal
             grand_pending += pending
