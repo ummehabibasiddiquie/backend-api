@@ -902,10 +902,10 @@ def view_daily_trackers():
                   + COALESCE(umt.extra_assigned_hours, 0)
                 ) AS monthly_total_target,
 
-                CAST(umt.working_days AS SIGNED) AS working_days,
+                CAST(umt.working_days AS DECIMAL(10,2)) AS working_days,
 
                 GREATEST(
-                    COALESCE(CAST(umt.working_days AS SIGNED), 0)
+                    COALESCE(CAST(umt.working_days AS DECIMAL(10,2)), 0)
                     - COALESCE(dwc.worked_days_till_day, 0),
                     0
                 ) AS pending_days_after_this_day,
@@ -913,7 +913,7 @@ def view_daily_trackers():
                 CASE
                   WHEN umt.user_monthly_tracker_id IS NULL THEN NULL
                   WHEN GREATEST(
-                        COALESCE(CAST(umt.working_days AS SIGNED), 0)
+                        COALESCE(CAST(umt.working_days AS DECIMAL(10,2)), 0)
                         - COALESCE(dwc.worked_days_till_day, 0),
                         0
                       ) = 0 THEN NULL
@@ -927,7 +927,7 @@ def view_daily_trackers():
                     )
                     / NULLIF(
                         GREATEST(
-                            COALESCE(CAST(umt.working_days AS SIGNED), 0)
+                            COALESCE(CAST(umt.working_days AS DECIMAL(10,2)), 0)
                             - COALESCE(dwc.worked_days_till_day, 0),
                             0
                         ),
