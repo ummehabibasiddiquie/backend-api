@@ -834,14 +834,31 @@ def view_daily_trackers():
                 {where}
                 GROUP BY twt.user_id, twt.shift, DATE(CAST(twt.date_time AS DATETIME))
             ),
+            worked_days AS (
+                SELECT DISTINCT
+                    twt.user_id,
+                    DATE(CAST(twt.date_time AS DATETIME)) AS work_date
+                FROM task_work_tracker twt
+                LEFT JOIN tfs_user u ON u.user_id = twt.user_id
+                INNER JOIN temp_qc tq
+                    ON tq.user_id = twt.user_id
+                    AND DATE(tq.date) = DATE(CAST(twt.date_time AS DATETIME))
+                    AND tq.assigned_hours IS NOT NULL
+                    AND tq.assigned_hours > 0
+                {where}
+            ),
             daily_with_cum AS (
                 SELECT
                     d.*,
                     SUM(d.total_billable_hours_day)
                         OVER (PARTITION BY d.user_id ORDER BY d.work_date)
                         AS cumulative_billable_hours_till_day,
-                    COUNT(*) OVER (PARTITION BY d.user_id ORDER BY d.work_date)
-                        AS worked_days_till_day
+                    (
+                        SELECT COUNT(*)
+                        FROM worked_days wd
+                        WHERE wd.user_id = d.user_id
+                        AND wd.work_date <= d.work_date
+                    ) AS worked_days_till_day
                 FROM daily d
             )
             SELECT
@@ -944,7 +961,7 @@ def view_daily_trackers():
             ORDER BY dwc.work_date DESC, u.user_name ASC
         """
 
-        final_params = list(params) + [month_year]
+        final_params = list(params) + list(params) + [month_year]
         cursor.execute(query, tuple(final_params))
         rows = cursor.fetchall()
 
