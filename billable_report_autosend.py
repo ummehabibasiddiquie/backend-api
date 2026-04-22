@@ -484,7 +484,7 @@ def generate_html(report_date, data_rows):
             <td align="right">{"" if is_team_agent(u) else f"{assigned:.2f}"}</td>
             <td align="right">{worked:.2f}</td>
             <td align="right">{f"{u['qc_score']:.2f}" if u.get('qc_score') is not None else ""}</td>
-            <td align="right">{required:.2f}</td>
+            <td align="right">{f"{required:.2f}" if required is not None else ""}</td>
             <td align="right">{mtd:.2f}</td>
             <td align="right">{goal:.2f}</td>
             <td align="right">{pending:.2f}</td>
