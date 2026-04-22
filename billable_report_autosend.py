@@ -350,17 +350,18 @@ def fetch_data():
 
             monthly_target = float(u["monthly_target"])
             extra = float(u["extra_assigned_hours"])
-            working_days = float(u["working_days"] or 0)
+            working_days = u["working_days"]
+            working_days = float(working_days) if working_days is not None else None
 
             monthly_goal = monthly_target + extra
             pending = max(0, monthly_goal - mtd)
 
             days_worked = days_worked_map.get(uid, 0)
-            remaining_days = max(0, working_days - days_worked)
+            remaining_days = max(0, working_days - days_worked) if working_days is not None else 0
 
-            # Match tracker API logic: return NULL if no monthly target or remaining days = 0
+            # Match tracker API logic: return NULL if user_monthly_tracker_id is NULL or working_days is NULL or remaining_days = 0
             daily_required = None
-            if u.get("user_monthly_tracker_id") is not None and remaining_days > 0:
+            if u.get("user_monthly_tracker_id") is not None and working_days is not None and remaining_days > 0:
                 daily_required = pending / remaining_days
 
             avg_qc = avg_qc_map.get(uid)
