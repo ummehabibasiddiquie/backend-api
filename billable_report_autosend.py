@@ -95,7 +95,7 @@ def fetch_data():
                 umt.user_monthly_tracker_id,
                 COALESCE(umt.monthly_target,0) AS monthly_target,
                 COALESCE(umt.extra_assigned_hours,0) AS extra_assigned_hours,
-                CAST(umt.working_days AS DECIMAL(10,2)) AS working_days,
+                COALESCE(umt.working_days,0) AS working_days,
                 u.is_active,
                 u.deactivated_at,
                 CASE 
@@ -350,14 +350,13 @@ def fetch_data():
 
             monthly_target = float(u["monthly_target"])
             extra = float(u["extra_assigned_hours"])
-            working_days = u["working_days"]
-            working_days = float(working_days) if working_days is not None else None
+            working_days = float(u["working_days"])
 
             monthly_goal = monthly_target + extra
             pending = max(0, monthly_goal - mtd)
 
             days_worked = days_worked_map.get(uid, 0)
-            remaining_days = max(0, working_days - days_worked) if working_days is not None else 0
+            remaining_days = max(0, working_days - days_worked)
 
             # Match tracker API logic: return NULL if user_monthly_tracker_id IS NULL or remaining_days = 0
             daily_required = None
