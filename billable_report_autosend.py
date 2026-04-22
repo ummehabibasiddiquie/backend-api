@@ -387,7 +387,7 @@ def fetch_data():
                     "qc_date": qc_date,
                     "avg_qc_score": avg_qc,
                     "monthly_goal": monthly_goal,
-                    "pending_goal": pending,
+                    "pending_goal": pending_hours,
                     "daily_required_hours": daily_required,
                 }
             )
