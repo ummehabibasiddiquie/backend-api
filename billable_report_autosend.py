@@ -348,20 +348,31 @@ def fetch_data():
             if qc_date and isinstance(qc_date, datetime):
                 qc_date = qc_date.strftime("%Y-%m-%d")
 
-            monthly_target = float(u["monthly_target"])
-            extra = float(u["extra_assigned_hours"])
-            working_days = float(u["working_days"])
+            monthly_target = float(u["monthly_target"] or 0)
+            extra = float(u["extra_assigned_hours"] or 0)
+
+            working_days = u["working_days"]
+            working_days = float(working_days) if working_days is not None else 0
 
             monthly_goal = monthly_target + extra
-            pending = max(0, monthly_goal - mtd)
 
+            # MTD worked hours
+            mtd = mtd_map.get(uid, 0)
+
+            # Days worked (same logic you already have)
             days_worked = days_worked_map.get(uid, 0)
-            remaining_days = max(0, working_days - days_worked)
 
-            # Match tracker API logic: return NULL if user_monthly_tracker_id IS NULL or remaining_days = 0
-            daily_required = None
-            if u.get("user_monthly_tracker_id") is not None and remaining_days > 0:
-                daily_required = pending / remaining_days
+            # ✅ Match API logic
+            pending_days = max(0, working_days - days_worked)
+
+            # Remaining hours
+            pending_hours = max(0, monthly_goal - mtd)
+
+            # ✅ FINAL FIX
+            daily_required = (
+                pending_hours / pending_days
+                if pending_days > 0 else None
+            )
 
             avg_qc = avg_qc_map.get(uid)
 
