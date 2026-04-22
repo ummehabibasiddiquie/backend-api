@@ -495,7 +495,7 @@ def generate_html(report_date, data_rows):
             if not is_team_agent(u):
                 team_assigned += assigned
             team_worked += worked
-            team_required += required
+            team_required += required if required is not None else 0
             team_mtd += mtd
             team_goal += goal
             team_pending += pending
@@ -503,7 +503,7 @@ def generate_html(report_date, data_rows):
             if not is_team_agent(u):
                 grand_assigned += assigned
             grand_worked += worked
-            grand_required += required
+            grand_required += required if required is not None else 0
             grand_mtd += mtd
             grand_goal += goal
             grand_pending += pending
