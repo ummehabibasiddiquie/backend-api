@@ -95,7 +95,7 @@ def fetch_data():
                 umt.user_monthly_tracker_id,
                 COALESCE(umt.monthly_target,0) AS monthly_target,
                 COALESCE(umt.extra_assigned_hours,0) AS extra_assigned_hours,
-                COALESCE(umt.working_days,0) AS working_days,
+                CAST(umt.working_days AS DECIMAL(10,2)) AS working_days,
                 u.is_active,
                 u.deactivated_at,
                 CASE 
@@ -350,7 +350,7 @@ def fetch_data():
 
             monthly_target = float(u["monthly_target"])
             extra = float(u["extra_assigned_hours"])
-            working_days = float(u["working_days"])
+            working_days = float(u["working_days"] or 0)
 
             monthly_goal = monthly_target + extra
             pending = max(0, monthly_goal - mtd)
