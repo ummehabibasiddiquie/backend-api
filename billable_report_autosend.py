@@ -19,21 +19,21 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 RECIPIENTS = [
     "ummehabiba.siddiquie@transformsolution.net",
-    "mohsin.pathan@transformsolution.net",
-    "dharmesh.jotania@transformsolution.net",
-    "venkateshwaran.iyer@transformsolution.net",
-    "yahya.irani@transformsolution.net",
-    "amit.mandviwala@transformsolution.net",
-    "sriman.narayan@transformsolution.net",
-    "shirin.gafoor@transformsolution.net",
-    "avinash.dwivedi@transformsolution.net",
-    "jimil.kinariwala@transformsolution.net",
-    "manas.pradhan@transformsolution.net"
+    # "mohsin.pathan@transformsolution.net",
+    # "dharmesh.jotania@transformsolution.net",
+    # "venkateshwaran.iyer@transformsolution.net",
+    # "yahya.irani@transformsolution.net",
+    # "amit.mandviwala@transformsolution.net",
+    # "sriman.narayan@transformsolution.net",
+    # "shirin.gafoor@transformsolution.net",
+    # "avinash.dwivedi@transformsolution.net",
+    # "jimil.kinariwala@transformsolution.net",
+    # "manas.pradhan@transformsolution.net"
 ]
 
 CC_RECIPIENTS = [
-    "ashfaq@transformsolution.com",
-    "seema@transformsolution.com"
+    # "ashfaq@transformsolution.com",
+    # "seema@transformsolution.com"
 ]
 
 
@@ -75,7 +75,7 @@ def fetch_data():
         report_date = today - timedelta(days=1)
 
         # TEST DATE
-        # report_date = datetime.strptime("2026-04-17", "%Y-%m-%d").date()
+        report_date = datetime.strptime("2026-04-17", "%Y-%m-%d").date()
         
         report_month = report_date.strftime("%b%Y").upper()
 
@@ -352,7 +352,10 @@ def fetch_data():
             days_worked = days_worked_map.get(uid, 0)
             remaining_days = max(0, working_days - days_worked)
 
-            daily_required = pending / remaining_days if remaining_days else 0
+            # Match tracker API logic: return NULL if no monthly target or remaining days = 0
+            daily_required = None
+            if monthly_target > 0 and remaining_days > 0:
+                daily_required = pending / remaining_days
 
             avg_qc = avg_qc_map.get(uid)
 
