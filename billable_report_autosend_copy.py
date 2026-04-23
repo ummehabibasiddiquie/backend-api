@@ -251,33 +251,33 @@ def fetch_data():
 
         qc_map = {}
 
-        if latest_qc_date:
-            cursor.execute(
-                f"""
-                SELECT 
-                    dwc.user_id,
-                    qr.qc_score,
-                    %s AS qc_date
-                FROM (
-                    SELECT DISTINCT user_id
-                    FROM tfs_user
-                    WHERE user_id IN ({in_ph})
-                ) dwc
-                LEFT JOIN (
-                    SELECT
-                        agent_id,
-                        ROUND(AVG(qc_score), 2) AS qc_score
-                    FROM qc_records
-                    WHERE DATE(date_of_file_submission) = %s
-                    AND agent_id IN ({in_ph})
-                    GROUP BY agent_id
-                ) qr
-                    ON qr.agent_id = dwc.user_id
-                """,
-                [latest_qc_date] + user_ids + [latest_qc_date] + user_ids,
-            )
+        # Get QC scores for report date
+        cursor.execute(
+            f"""
+            SELECT 
+                dwc.user_id,
+                qr.qc_score,
+                %s AS qc_date
+            FROM (
+                SELECT DISTINCT user_id
+                FROM tfs_user
+                WHERE user_id IN ({in_ph})
+            ) dwc
+            LEFT JOIN (
+                SELECT
+                    agent_id,
+                    ROUND(AVG(qc_score), 2) AS qc_score
+                FROM qc_records
+                WHERE DATE(date_of_file_submission) = %s
+                AND agent_id IN ({in_ph})
+                GROUP BY agent_id
+            ) qr
+                ON qr.agent_id = dwc.user_id
+            """,
+            [report_date] + user_ids + [report_date] + user_ids,
+        )
 
-            qc_map = {r["user_id"]: r for r in cursor.fetchall()}
+        qc_map = {r["user_id"]: r for r in cursor.fetchall()}
 
         avg_qc_map = {}
 
@@ -408,18 +408,9 @@ def generate_html(report_date, data_rows):
     worked_date = report_date.strftime("%d %b")
     assigned_date = worked_date
     
-    # Find latest QC date
-    qc_dates = []
-    for u in data_rows:
-        qc_date = u.get("qc_date")
-        if qc_date:
-            if isinstance(qc_date, str):
-                qc_date = datetime.strptime(qc_date, "%Y-%m-%d")
-            qc_dates.append(qc_date)
-
-    latest_qc_date = max(qc_dates) if qc_dates else None
-    latest_qc_date_str = latest_qc_date.strftime("%d %b") if latest_qc_date else ""
-
+    # QC scores are for report date
+    qc_date_str = report_date.strftime("%d %b")
+    
     html = f"""
     <p><b>Delivered billable hours on {day_str} {month_year}</b></p>
 
@@ -436,12 +427,12 @@ def generate_html(report_date, data_rows):
     <tr style="background:#FFE699;font-weight:bold">
         <th >Assigned <br>{assigned_date}</th>
         <th>Worked <br>{worked_date}</th>
-        <th>Quality <br>{latest_qc_date_str}</th>
+        <th>Quality <br>{report_date.strftime('%d %b')}</th>
         <th>Daily Required <br> Hours</th>
         <th>Delivered-MTD <br> till {worked_date}</th>
         <th>Monthly Goal</th>
         <th>Pending Goal</th>
-        <th>Avg QC till <br>{latest_qc_date_str}</th>
+        <th>Avg QC till <br>{report_date.strftime('%d %b')}</th>
     </tr>
     """
 
