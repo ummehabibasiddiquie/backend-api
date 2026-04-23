@@ -88,6 +88,7 @@ def fetch_data():
         cursor.execute(
             """
             SELECT u.user_id, u.user_name, t.team_name,
+                umt.user_monthly_tracker_id,
                 COALESCE(umt.monthly_target,0) AS monthly_target,
                 COALESCE(umt.extra_assigned_hours,0) AS extra_assigned_hours,
                 COALESCE(umt.working_days,0) AS working_days
@@ -355,7 +356,11 @@ def fetch_data():
             days_worked = days_worked_map.get(uid, 0)
             remaining_days = max(0, working_days - days_worked)
 
-            daily_required = pending / remaining_days if remaining_days else 0
+            daily_required = None
+            if u.get("user_monthly_tracker_id") is not None and remaining_days > 0:
+                # Match tracker API exactly: (monthly_target + extra - cumulative_hours) / remaining_days
+                pending_hours = (monthly_target + extra) - mtd
+                daily_required = pending_hours / remaining_days
 
             u.update(
                 {
@@ -472,7 +477,7 @@ def generate_html(report_date, data_rows):
             <td align="right">{"" if is_team_agent(u) else f"{assigned:.2f}"}</td>
             <td align="right">{worked:.2f}</td>
             <td align="right">{f"{u['qc_score']:.2f}" if u.get('qc_score') is not None else ""}</td>
-            <td align="right">{required:.2f}</td>
+            <td align="right">{f"{required:.2f}" if required is not None else ""}</td>
             <td align="right">{mtd:.2f}</td>
             <td align="right">{goal:.2f}</td>
             <td align="right">{pending:.2f}</td>
@@ -483,7 +488,7 @@ def generate_html(report_date, data_rows):
             if not is_team_agent(u):
                 team_assigned += assigned
             team_worked += worked
-            team_required += required
+            team_required += required if required is not None else 0
             team_mtd += mtd
             team_goal += goal
             team_pending += pending
@@ -491,7 +496,7 @@ def generate_html(report_date, data_rows):
             if not is_team_agent(u):
                 grand_assigned += assigned
             grand_worked += worked
-            grand_required += required
+            grand_required += required if required is not None else 0
             grand_mtd += mtd
             grand_goal += goal
             grand_pending += pending
