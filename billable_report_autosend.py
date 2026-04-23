@@ -523,7 +523,7 @@ def send_email(report_date, html_body):
     print(f"TO: {', '.join(RECIPIENTS)}")
     print(f"CC: {', '.join(CC_RECIPIENTS)}")
     print("=" * 80)
-    print(html_body)
+    # print(html_body)
     print("=" * 80)
     logging.info("Report printed to console (localhost mode)")
 
