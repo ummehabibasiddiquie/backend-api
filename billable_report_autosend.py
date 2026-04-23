@@ -393,7 +393,7 @@ def fetch_data():
 # -------------------------------
 def generate_html(report_date, data_rows):
 
-    day_str = report_date.strftime("%d %b")
+    day_str = report_date.strftime("%d")
     month_year = report_date.strftime("%B %Y")
     worked_date = report_date.strftime("%d %b")
     assigned_date = worked_date
