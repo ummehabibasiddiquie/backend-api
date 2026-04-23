@@ -317,12 +317,18 @@ def fetch_data():
             pending = max(0, monthly_goal - mtd)
 
             days_worked = days_worked_map.get(uid, 0)
+            # Match tracker API: Use cumulative billable hours up to report date instead of MTD
+            cumulative_hours = mtd  # This is actually cumulative up to report date
+            
+            days_worked = days_worked_map.get(uid, 0)
             # Match tracker API: GREATEST(working_days - worked_days, 0)
             remaining_days = max(0, working_days - days_worked)
-
+            
             daily_required = None
             if u.get("user_monthly_tracker_id") is not None and remaining_days > 0:
-                daily_required = pending / remaining_days
+                # Match tracker API exactly: (monthly_target + extra - cumulative_hours) / remaining_days
+                pending_hours = (monthly_target + extra) - cumulative_hours
+                daily_required = pending_hours / remaining_days
 
             avg_qc = avg_qc_map.get(uid)
 
