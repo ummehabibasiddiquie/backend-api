@@ -382,6 +382,10 @@ def fetch_data():
                 print(f"  working_days: {working_days}")
                 print(f"  days_worked: {days_worked}")
                 print(f"  remaining_days: {remaining_days}")
+                print(f"  monthly_target: {monthly_target}")
+                print(f"  mtd: {mtd}")
+                print(f"  pending: {pending}")
+                print(f"  daily_required: {pending / remaining_days if remaining_days else 0}")
 
             daily_required = pending / remaining_days if remaining_days else 0
 
@@ -490,7 +494,7 @@ def generate_html(report_date, data_rows):
             html += f"""
             <tr>
             <td>{u['user_name']}</td>
-            <td align="center">{u.get('status', 'Active')}</td>
+            <td align="center">{u.get('exit_status', 'Active')}</td>
             <td align="right">{"" if is_team_agent(u) else f"{assigned:.2f}"}</td>
             <td align="right">{worked:.2f}</td>
             <td align="right">{f"{u['qc_score']:.2f}" if u.get('qc_score') is not None else ""}</td>
