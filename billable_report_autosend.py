@@ -196,11 +196,11 @@ def fetch_data():
             ) qr
                 ON qr.agent_id = dwc.user_id
             """,
-            [report_date] + user_ids + [report_date] + user_ids,
+            [report_date] + [report_date] + user_ids,
         )
 
         qc_map = {r["user_id"]: r for r in cursor.fetchall()}
-
+        
         # Also get average QC scores up to report date
         avg_qc_map = {}
 
@@ -224,10 +224,9 @@ def fetch_data():
                     AND agent_id IN ({in_ph})
                 ) qr
                     ON qr.agent_id = dwc.user_id
-                WHERE qr.qc_score IS NOT NULL
                 GROUP BY dwc.user_id
             """,
-            user_ids + [month_start, report_date] + user_ids,
+            [month_start, report_date] + user_ids,
         )
 
         avg_qc_map = {
@@ -513,7 +512,7 @@ def send_email(report_date, html_body):
     print(f"TO: {', '.join(RECIPIENTS)}")
     print(f"CC: {', '.join(CC_RECIPIENTS)}")
     print("=" * 80)
-    print(html_body)
+    # print(html_body)
     print("=" * 80)
     logging.info("Report printed to console (localhost mode)")
 
