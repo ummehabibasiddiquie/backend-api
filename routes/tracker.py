@@ -462,7 +462,7 @@ def view_trackers():
         # -----------------------------
         query = """
         SELECT 
-            twt.*, u.user_id, u.user_id AS agent_id, u.user_name, u.user_email,
+            twt.*, u.user_id, u.user_id AS agent_id, u.user_name, u.user_email, u.user_tenure,
             (SELECT GROUP_CONCAT(DISTINCT am.user_id) 
              FROM tfs_user am 
              WHERE u.asst_manager_id = am.user_id 
