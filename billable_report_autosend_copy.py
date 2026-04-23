@@ -75,7 +75,7 @@ def fetch_data():
         report_date = today - timedelta(days=1)
 
         # TEST DATE
-        # report_date = datetime.strptime("2026-03-17", "%Y-%m-%d").date()
+        report_date = datetime.strptime("2026-03-21", "%Y-%m-%d").date()
         
         report_month = report_date.strftime("%b%Y").upper()
 
@@ -215,23 +215,27 @@ def fetch_data():
         cursor.execute(
             f"""
             SELECT 
-                twt.user_id,
-                SUM(
+                user_id,
+                SUM(day_value) AS days_worked
+            FROM (
+                SELECT 
+                    twt.user_id,
+                    DATE(twt.date_time) AS work_date,
                     CASE
-                        WHEN tq.assigned_hours = 4.5 THEN 0.5
-                        ELSE 1
-                    END
-                ) AS days_worked
-            FROM task_work_tracker twt
-            INNER JOIN temp_qc tq
-                ON tq.user_id = twt.user_id
-                AND DATE(tq.date) = DATE(twt.date_time)
-                AND tq.assigned_hours IS NOT NULL
-                AND tq.assigned_hours > 0
-            WHERE DATE(twt.date_time) BETWEEN %s AND %s
-            AND twt.user_id IN ({in_ph})
-            AND twt.is_active=1
-            GROUP BY twt.user_id
+                        WHEN MAX(tq.assigned_hours) = 4.5 THEN 0.5
+                        WHEN MAX(tq.assigned_hours) > 0 THEN 1
+                        ELSE 0
+                    END AS day_value
+                FROM task_work_tracker twt
+                INNER JOIN temp_qc tq
+                    ON tq.user_id = twt.user_id
+                    AND DATE(tq.date) = DATE(twt.date_time)
+                WHERE DATE(twt.date_time) BETWEEN %s AND %s
+                AND twt.user_id IN ({in_ph})
+                AND twt.is_active = 1
+                GROUP BY twt.user_id, DATE(twt.date_time)
+            ) t
+            GROUP BY user_id
             """,
             [month_start, report_date] + user_ids,
         )
@@ -355,6 +359,17 @@ def fetch_data():
 
             days_worked = days_worked_map.get(uid, 0)
             remaining_days = max(0, working_days - days_worked)
+
+            # DEBUG: Print values for 2nd and 3rd users
+            if uid == users[1]["user_id"] or uid == users[2]["user_id"]:
+                print(f"DEBUG - User: {u['user_name']}")
+                print(f"  working_days: {working_days}")
+                print(f"  days_worked: {days_worked}")
+                print(f"  remaining_days: {remaining_days}")
+                print(f"  monthly_target: {monthly_target}")
+                print(f"  mtd: {mtd}")
+                print(f"  pending: {pending}")
+                print(f"  daily_required: {pending / remaining_days if remaining_days else 0}")
 
             daily_required = pending / remaining_days if remaining_days else 0
 
