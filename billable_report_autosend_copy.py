@@ -365,17 +365,6 @@ def fetch_data():
             days_worked = days_worked_map.get(uid, 0)
             remaining_days = max(0, working_days - days_worked)
 
-            # DEBUG: Print values for 2nd and 3rd users
-            if uid == users[1]["user_id"] or uid == users[2]["user_id"]:
-                print(f"DEBUG - User: {u['user_name']}")
-                print(f"  working_days: {working_days}")
-                print(f"  days_worked: {days_worked}")
-                print(f"  remaining_days: {remaining_days}")
-                print(f"  monthly_target: {monthly_target}")
-                print(f"  mtd: {mtd}")
-                print(f"  pending: {pending}")
-                print(f"  daily_required: {pending / remaining_days if remaining_days else 0}")
-
             daily_required = pending / remaining_days if remaining_days else 0
 
             u.update(
