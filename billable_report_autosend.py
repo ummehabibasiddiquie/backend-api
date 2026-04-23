@@ -559,38 +559,26 @@ def generate_html(report_date, data_rows):
 # -------------------------------
 def send_email(report_date, html_body):
 
-    # FOR LOCALHOST TESTING - Print instead of sending email
-    print("=" * 80)
-    print(f"REPORT DATE: {report_date.strftime('%dth %B %Y')}")
-    print(f"SUBJECT: Delivered billable hours on {report_date.strftime('%dth %B %Y')}")
-    print(f"TO: {', '.join(RECIPIENTS)}")
-    print(f"CC: {', '.join(CC_RECIPIENTS)}")
-    print("=" * 80)
-    print(html_body)
-    print("=" * 80)
-    logging.info("Report printed to console (localhost mode)")
+    host = os.getenv("SMTP_HOST")
+    port = int(os.getenv("SMTP_PORT", 587))
+    user = os.getenv("SMTP_USER")
+    password = os.getenv("SMTP_PASS")
 
-    # Uncomment below to actually send email
-    # host = os.getenv("SMTP_HOST")
-    # port = int(os.getenv("SMTP_PORT", 587))
-    # user = os.getenv("SMTP_USER")
-    # password = os.getenv("SMTP_PASS")
+    msg = MIMEMultipart("alternative")
 
-    # msg = MIMEMultipart("alternative")
+    msg["From"] = user
+    msg["To"] = ", ".join(RECIPIENTS)
+    msg["Cc"] = ", ".join(CC_RECIPIENTS) 
+    msg["Subject"] = f"Delivered billable hours on {report_date.strftime('%dth %B %Y')}"
 
-    # msg["From"] = user
-    # msg["To"] = ", ".join(RECIPIENTS)
-    # msg["Cc"] = ", ".join(CC_RECIPIENTS) 
-    # msg["Subject"] = f"Delivered billable hours on {report_date.strftime('%dth %B %Y')}"
+    msg.attach(MIMEText(html_body, "html"))
 
-    # msg.attach(MIMEText(html_body, "html"))
-
-    # all_recipients = RECIPIENTS + CC_RECIPIENTS
+    all_recipients = RECIPIENTS + CC_RECIPIENTS
     
-    # with smtplib.SMTP(host, port) as server:
-    #     server.starttls()
-    #     server.login(user, password)
-    #     server.sendmail(user, all_recipients, msg.as_string())
+    with smtplib.SMTP(host, port) as server:
+        server.starttls()
+        server.login(user, password)
+        server.sendmail(user, all_recipients, msg.as_string())
 
 
 # -------------------------------
