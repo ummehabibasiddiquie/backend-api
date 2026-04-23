@@ -312,7 +312,7 @@ def fetch_data():
             monthly_target = float(u["monthly_target"])
             extra = float(u["extra_assigned_hours"])
             # Match tracker API: COALESCE(CAST(umt.working_days AS SIGNED), 0)
-            working_days = float(u["working_days"])
+            working_days = float(u["working_days"]) if u["working_days"] is not None else 0
             
             monthly_goal = monthly_target + extra
             pending = max(0, monthly_goal - mtd)
