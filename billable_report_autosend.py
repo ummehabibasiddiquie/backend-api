@@ -19,21 +19,21 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 RECIPIENTS = [
     "ummehabiba.siddiquie@transformsolution.net",
-    "mohsin.pathan@transformsolution.net",
-    "dharmesh.jotania@transformsolution.net",
-    "venkateshwaran.iyer@transformsolution.net",
-    "yahya.irani@transformsolution.net",
-    "amit.mandviwala@transformsolution.net",
-    "sriman.narayan@transformsolution.net",
-    "shirin.gafoor@transformsolution.net",
-    "avinash.dwivedi@transformsolution.net",
-    "jimil.kinariwala@transformsolution.net",
-    "manas.pradhan@transformsolution.net"
+    # "mohsin.pathan@transformsolution.net",
+    # "dharmesh.jotania@transformsolution.net",
+    # "venkateshwaran.iyer@transformsolution.net",
+    # "yahya.irani@transformsolution.net",
+    # "amit.mandviwala@transformsolution.net",
+    # "sriman.narayan@transformsolution.net",
+    # "shirin.gafoor@transformsolution.net",
+    # "avinash.dwivedi@transformsolution.net",
+    # "jimil.kinariwala@transformsolution.net",
+    # "manas.pradhan@transformsolution.net"
 ]
 
 CC_RECIPIENTS = [
-    "ashfaq@transformsolution.com",
-    "seema@transformsolution.com"
+    # "ashfaq@transformsolution.com",
+    # "seema@transformsolution.com"
 ]
 
 
@@ -75,7 +75,7 @@ def fetch_data():
         report_date = today - timedelta(days=1)
 
         # TEST DATE
-        # report_date = datetime.strptime("2026-03-17", "%Y-%m-%d").date()
+        # report_date = datetime.strptime("2026-04-20", "%Y-%m-%d").date()
         
         report_month = report_date.strftime("%b%Y").upper()
 
@@ -85,12 +85,24 @@ def fetch_data():
         # USERS
         # -------------------------
 
+        # Calculate month start and end for deactivated_at logic
+        month_start = report_date.replace(day=1)
+        month_end = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(seconds=1)
+        
         cursor.execute(
             """
             SELECT u.user_id, u.user_name, t.team_name,
+                umt.user_monthly_tracker_id,
                 COALESCE(umt.monthly_target,0) AS monthly_target,
                 COALESCE(umt.extra_assigned_hours,0) AS extra_assigned_hours,
-                COALESCE(umt.working_days,0) AS working_days
+                CAST(umt.working_days AS DECIMAL(10,2)) AS working_days,
+                u.is_active,
+                u.deactivated_at,
+                CASE 
+                    WHEN u.is_active = 1 THEN 'Active'
+                    WHEN u.is_active = 0 AND u.deactivated_at IS NOT NULL THEN 'Exited'
+                    ELSE 'Inactive'
+                END AS exit_status
             FROM tfs_user u
             JOIN user_role r ON u.role_id = r.role_id
             LEFT JOIN team t ON u.team_id = t.team_id
@@ -98,11 +110,17 @@ def fetch_data():
                 ON umt.user_id = u.user_id
                 AND umt.is_active=1
                 AND umt.month_year=%s
-            WHERE u.is_delete != 0
-            AND u.is_active=1
-            AND u.is_delete != 0
+            WHERE u.is_delete = 1
             AND r.role_name='Agent'
             AND t.team_name IN ('A','B')
+            AND (
+                u.is_active = 1
+                OR (
+                    u.is_active = 0
+                    AND u.deactivated_at IS NOT NULL
+                    AND u.deactivated_at BETWEEN %s AND %s
+                )
+            )
             ORDER BY
                 t.team_name,
                 CASE 
@@ -111,7 +129,7 @@ def fetch_data():
                 END,
                 u.user_name
             """,
-            (report_month,),
+            (report_month, month_start, month_end),
         )
 
         users = cursor.fetchall()
@@ -174,20 +192,10 @@ def fetch_data():
             )
             qc_user_ids = {r["user_id"] for r in cursor.fetchall()}
 
-        # Remove absent agents but keep team agents AND users with QC scores
-        active_user_ids = set(daily_map.keys())
-
-        users = [
-            u for u in users
-            if (u["user_id"] in active_user_ids or is_team_agent(u) or u["user_id"] in qc_user_ids)
-        ]
-
+        # Show all users including absent ones (no filtering)
+        # All users will appear with 0 production if they have no trackers
         if not users:
             return report_date, []
-
-        # rebuild user_ids AFTER filtering
-        user_ids = [u["user_id"] for u in users]
-        in_ph = ",".join(["%s"] * len(user_ids))
 
         # -------------------------
         # MTD HOURS
@@ -214,8 +222,14 @@ def fetch_data():
 
         cursor.execute(
             f"""
-            SELECT twt.user_id,
-            COUNT(DISTINCT DATE(twt.date_time)) AS days_worked
+            SELECT 
+                twt.user_id,
+                SUM(
+                    CASE
+                        WHEN tq.assigned_hours = 4.5 THEN 0.5
+                        ELSE 1
+                    END
+                ) AS days_worked
             FROM task_work_tracker twt
             INNER JOIN temp_qc tq
                 ON tq.user_id = twt.user_id
@@ -231,7 +245,7 @@ def fetch_data():
         )
 
         days_worked_map = {
-            r["user_id"]: int(r["days_worked"]) for r in cursor.fetchall()
+            r["user_id"]: float(r["days_worked"]) for r in cursor.fetchall()
         }
 
         qc_map = {}
@@ -331,18 +345,13 @@ def fetch_data():
 
             qc_data = qc_map.get(uid, {})
 
-            # print(qc_data.get("qc_date"))
             qc_date = qc_data.get("qc_date")
             if qc_date and isinstance(qc_date, datetime):
                 qc_date = qc_date.strftime("%Y-%m-%d")
 
-            avg_qc = avg_qc_map.get(uid)
-            # assigned = assigned_map.get(uid, 0)
-            assigned = 0 if is_team_agent(u) else assigned_map.get(uid, 0)
-
             monthly_target = float(u["monthly_target"])
             extra = float(u["extra_assigned_hours"])
-            working_days = float(u["working_days"])
+            working_days = float(u["working_days"]) if u["working_days"] is not None else 0
 
             monthly_goal = monthly_target + extra
             pending = max(0, monthly_goal - mtd)
@@ -350,7 +359,24 @@ def fetch_data():
             days_worked = days_worked_map.get(uid, 0)
             remaining_days = max(0, working_days - days_worked)
 
-            daily_required = pending / remaining_days if remaining_days else 0
+            # DEBUG: Print values for first user
+            if uid == users[0]["user_id"]:
+                print(f"DEBUG - User: {u['user_name']}")
+                print(f"  user_monthly_tracker_id: {u.get('user_monthly_tracker_id')}")
+                print(f"  working_days: {working_days}")
+                print(f"  days_worked: {days_worked}")
+                print(f"  remaining_days: {remaining_days}")
+                print(f"  monthly_target: {monthly_target}")
+                print(f"  pending: {pending}")
+
+            # Match tracker API logic: return NULL if user_monthly_tracker_id IS NULL or remaining_days = 0
+            daily_required = None
+            if u.get("user_monthly_tracker_id") is not None and remaining_days > 0:
+                daily_required = pending / remaining_days
+
+            avg_qc = avg_qc_map.get(uid)
+
+            assigned = 0 if (is_team_agent(u) or worked == 0) else assigned_map.get(uid, 0)
 
             u.update(
                 {
@@ -403,6 +429,7 @@ def generate_html(report_date, data_rows):
 
     <tr style="background:#FFD966;font-weight:bold">
         <th rowspan="2">Team Member</th>
+        <th rowspan="2">Exit Status</th>
         <th colspan="4">Daily Report</th>
         <th colspan="4">MTD Report</th>
     </tr>
@@ -464,10 +491,11 @@ def generate_html(report_date, data_rows):
             html += f"""
             <tr>
             <td>{u['user_name']}</td>
+            <td align="center">{u.get('exit_status', '')}</td>
             <td align="right">{"" if is_team_agent(u) else f"{assigned:.2f}"}</td>
             <td align="right">{worked:.2f}</td>
             <td align="right">{f"{u['qc_score']:.2f}" if u.get('qc_score') is not None else ""}</td>
-            <td align="right">{required:.2f}</td>
+            <td align="right">{f"{required:.2f}" if required is not None else ""}</td>
             <td align="right">{mtd:.2f}</td>
             <td align="right">{goal:.2f}</td>
             <td align="right">{pending:.2f}</td>
@@ -478,7 +506,7 @@ def generate_html(report_date, data_rows):
             if not is_team_agent(u):
                 team_assigned += assigned
             team_worked += worked
-            team_required += required
+            team_required += required if required is not None else 0
             team_mtd += mtd
             team_goal += goal
             team_pending += pending
@@ -486,7 +514,7 @@ def generate_html(report_date, data_rows):
             if not is_team_agent(u):
                 grand_assigned += assigned
             grand_worked += worked
-            grand_required += required
+            grand_required += required if required is not None else 0
             grand_mtd += mtd
             grand_goal += goal
             grand_pending += pending
@@ -494,6 +522,7 @@ def generate_html(report_date, data_rows):
         html += f"""
         <tr style="font-weight:bold;background:#C9DAF8">
         <td>Team {team} Total</td>
+        <td></td>
         <td align="right">{team_assigned:.2f}</td>
         <td align="right">{team_worked:.2f}</td>
         <td></td>
@@ -508,6 +537,7 @@ def generate_html(report_date, data_rows):
     html += f"""
         <tr style="font-weight:bold;background:#A4C2F4">
         <td>Grand Total</td>
+        <td></td>
         <td align="right">{grand_assigned:.2f}</td>
         <td align="right">{grand_worked:.2f}</td>
         <td></td>
@@ -529,26 +559,38 @@ def generate_html(report_date, data_rows):
 # -------------------------------
 def send_email(report_date, html_body):
 
-    host = os.getenv("SMTP_HOST")
-    port = int(os.getenv("SMTP_PORT", 587))
-    user = os.getenv("SMTP_USER")
-    password = os.getenv("SMTP_PASS")
+    # FOR LOCALHOST TESTING - Print instead of sending email
+    print("=" * 80)
+    print(f"REPORT DATE: {report_date.strftime('%dth %B %Y')}")
+    print(f"SUBJECT: Delivered billable hours on {report_date.strftime('%dth %B %Y')}")
+    print(f"TO: {', '.join(RECIPIENTS)}")
+    print(f"CC: {', '.join(CC_RECIPIENTS)}")
+    print("=" * 80)
+    print(html_body)
+    print("=" * 80)
+    logging.info("Report printed to console (localhost mode)")
 
-    msg = MIMEMultipart("alternative")
+    # Uncomment below to actually send email
+    # host = os.getenv("SMTP_HOST")
+    # port = int(os.getenv("SMTP_PORT", 587))
+    # user = os.getenv("SMTP_USER")
+    # password = os.getenv("SMTP_PASS")
 
-    msg["From"] = user
-    msg["To"] = ", ".join(RECIPIENTS)
-    msg["Cc"] = ", ".join(CC_RECIPIENTS) 
-    msg["Subject"] = f"Delivered billable hours on {report_date.strftime('%dth %B %Y')}"
+    # msg = MIMEMultipart("alternative")
 
-    msg.attach(MIMEText(html_body, "html"))
+    # msg["From"] = user
+    # msg["To"] = ", ".join(RECIPIENTS)
+    # msg["Cc"] = ", ".join(CC_RECIPIENTS) 
+    # msg["Subject"] = f"Delivered billable hours on {report_date.strftime('%dth %B %Y')}"
 
-    all_recipients = RECIPIENTS + CC_RECIPIENTS
+    # msg.attach(MIMEText(html_body, "html"))
+
+    # all_recipients = RECIPIENTS + CC_RECIPIENTS
     
-    with smtplib.SMTP(host, port) as server:
-        server.starttls()
-        server.login(user, password)
-        server.sendmail(user, all_recipients, msg.as_string())
+    # with smtplib.SMTP(host, port) as server:
+    #     server.starttls()
+    #     server.login(user, password)
+    #     server.sendmail(user, all_recipients, msg.as_string())
 
 
 # -------------------------------
