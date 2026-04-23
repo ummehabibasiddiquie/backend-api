@@ -163,10 +163,6 @@ def fetch_data():
             r["user_id"]: float(r["worked_hours"] or 0) for r in cursor.fetchall()
         }
         
-        # Calculate month_year and cutoff date exactly like tracker API
-        month_year = report_date.strftime("%b%Y").upper()
-        yyyymm = int(report_date.strftime("%Y%m"))
-        
         # -------------------------
         # QC SCORES (REPORT DATE)
         # -------------------------
@@ -200,7 +196,7 @@ def fetch_data():
         )
 
         qc_map = {r["user_id"]: r for r in cursor.fetchall()}
-        
+
         # Also get average QC scores up to report date
         avg_qc_map = {}
 
@@ -224,9 +220,10 @@ def fetch_data():
                     AND agent_id IN ({in_ph})
                 ) qr
                     ON qr.agent_id = dwc.user_id
+                WHERE qr.qc_score IS NOT NULL
                 GROUP BY dwc.user_id
             """,
-            [month_start, report_date] + user_ids,
+            user_ids + [month_start, report_date] + user_ids,
         )
 
         avg_qc_map = {
@@ -235,7 +232,7 @@ def fetch_data():
         }
                 
         # -------------------------
-        # MTD HOURS (MATCH TRACKER API EXACTLY)
+        # MTD HOURS
         # -------------------------
 
         cursor.execute(
@@ -243,34 +240,32 @@ def fetch_data():
             SELECT user_id,
             SUM(production / NULLIF(tenure_target,0)) AS mtd_hours
             FROM task_work_tracker
-            WHERE user_id IN ({in_ph})
+            WHERE DATE(date_time) BETWEEN %s AND %s
+            AND user_id IN ({in_ph})
             AND is_active=1
-            AND (YEAR(CAST(date_time AS DATETIME))*100 + MONTH(CAST(date_time AS DATETIME))) = %s
-            AND DATE(CAST(date_time AS DATETIME)) <= %s
             GROUP BY user_id
             """,
-            user_ids + [yyyymm, report_date],
+            [month_start, report_date] + user_ids,
         )
 
         mtd_map = {r["user_id"]: float(r["mtd_hours"] or 0) for r in cursor.fetchall()}
         
         # -------------------------
-        # DAYS WORKED (MATCH TRACKER API EXACTLY)
+        # DAYS WORKED
         # -------------------------
 
         cursor.execute(
             f"""
             SELECT 
-                user_id,
-                COUNT(DISTINCT DATE(CAST(date_time AS DATETIME))) AS days_worked
-            FROM task_work_tracker
-            WHERE user_id IN ({in_ph})
-            AND is_active=1
-            AND (YEAR(CAST(date_time AS DATETIME))*100 + MONTH(CAST(date_time AS DATETIME))) = %s
-            AND DATE(CAST(date_time AS DATETIME)) <= %s
-            GROUP BY user_id
+                twt.user_id,
+                COUNT(DISTINCT DATE(twt.date_time)) AS days_worked
+            FROM task_work_tracker twt
+            WHERE DATE(twt.date_time) BETWEEN %s AND %s
+            AND twt.user_id IN ({in_ph})
+            AND twt.is_active=1
+            GROUP BY twt.user_id
             """,
-            user_ids + [yyyymm, report_date],
+            [month_start, report_date] + user_ids,
         )
 
         days_worked_map = {
@@ -295,7 +290,7 @@ def fetch_data():
             r["user_id"]: float(r["assigned_hours"] or 0)
             for r in cursor.fetchall()
         }
-        
+
         # -------------------------
         # CALCULATIONS
         # -------------------------
@@ -346,6 +341,22 @@ def fetch_data():
                     "daily_required_hours": daily_required,
                 }
             )
+
+        # DEBUG: Show all users and their calculations
+        print(f"DEBUG - All users calculations:")
+        for u in users:
+            uid = u["user_id"]
+            days_worked = days_worked_map.get(uid, 0)
+            working_days = float(u["working_days"]) if u["working_days"] is not None else 0
+            remaining_days = max(0, working_days - days_worked)
+            mtd = u.get("mtd_hours", 0)
+            pending = u.get("pending_goal", 0)
+            
+            print(f"  {u['user_name']} (ID: {uid}):")
+            print(f"    working_days: {working_days}, days_worked: {days_worked}, remaining_days: {remaining_days}")
+            print(f"    monthly_target: {u['monthly_target']}, mtd: {mtd:.2f}, pending: {pending:.2f}")
+            print(f"    user_monthly_tracker_id: {u.get('user_monthly_tracker_id')}")
+            print(f"    daily_required_hours: {u.get('daily_required_hours')}")
 
         return report_date, users
 
@@ -512,7 +523,7 @@ def send_email(report_date, html_body):
     print(f"TO: {', '.join(RECIPIENTS)}")
     print(f"CC: {', '.join(CC_RECIPIENTS)}")
     print("=" * 80)
-    # print(html_body)
+    print(html_body)
     print("=" * 80)
     logging.info("Report printed to console (localhost mode)")
 
