@@ -19,9 +19,9 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 RECIPIENTS = [
     "ummehabiba.siddiquie@transformsolution.net",
-    "mohsin.pathan@transformsolution.net",
-    "dharmesh.jotania@transformsolution.net",
-    "venkateshwaran.iyer@transformsolution.net",
+    # "mohsin.pathan@transformsolution.net",
+    # "dharmesh.jotania@transformsolution.net",
+    # "venkateshwaran.iyer@transformsolution.net",
     # "yahya.irani@transformsolution.net",
     # "amit.mandviwala@transformsolution.net",
     # "sriman.narayan@transformsolution.net",
@@ -75,7 +75,7 @@ def fetch_data():
         report_date = today - timedelta(days=1)
 
         # TEST DATE
-        # report_date = datetime.strptime("2026-03-21", "%Y-%m-%d").date()
+        report_date = datetime.strptime("2026-03-21", "%Y-%m-%d").date()
         
         report_month = report_date.strftime("%b%Y").upper()
 
@@ -403,6 +403,7 @@ def generate_html(report_date, data_rows):
     
     html = f"""
     <p><b>Delivered billable hours on {day_str} {month_year}</b></p>
+    <p><i><b>Note: This is the updated version of the report with correct Target and calculations.</b></i></p>
 
     <table border="1" cellpadding="3" cellspacing="0"
     style="border-collapse:collapse;font-family:Arial;font-size:11px;width:auto">
