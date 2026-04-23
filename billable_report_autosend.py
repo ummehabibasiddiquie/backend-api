@@ -75,7 +75,7 @@ def fetch_data():
         report_date = today - timedelta(days=1)
 
         # TEST DATE
-        # report_date = datetime.strptime("2026-04-20", "%Y-%m-%d").date()
+        # report_date = datetime.strptime("2026-03-21", "%Y-%m-%d").date()
         
         report_month = report_date.strftime("%b%Y").upper()
 
@@ -95,7 +95,7 @@ def fetch_data():
                 umt.user_monthly_tracker_id,
                 COALESCE(umt.monthly_target,0) AS monthly_target,
                 COALESCE(umt.extra_assigned_hours,0) AS extra_assigned_hours,
-                CAST(umt.working_days AS DECIMAL(10,2)) AS working_days,
+                COALESCE(umt.working_days,0) AS working_days,
                 u.is_active,
                 u.deactivated_at,
                 CASE 
@@ -192,10 +192,7 @@ def fetch_data():
             )
             qc_user_ids = {r["user_id"] for r in cursor.fetchall()}
 
-        # Show all users including absent ones (no filtering)
-        # All users will appear with 0 production if they have no trackers
-        if not users:
-            return report_date, []
+        # Keep all users including absent and exited ones
 
         # -------------------------
         # MTD HOURS
@@ -223,13 +220,27 @@ def fetch_data():
         cursor.execute(
             f"""
             SELECT 
-                twt.user_id,
-                COUNT(DISTINCT DATE(twt.date_time)) AS days_worked
-            FROM task_work_tracker twt
-            WHERE DATE(twt.date_time) BETWEEN %s AND %s
-            AND twt.user_id IN ({in_ph})
-            AND twt.is_active=1
-            GROUP BY twt.user_id
+                user_id,
+                SUM(day_value) AS days_worked
+            FROM (
+                SELECT 
+                    twt.user_id,
+                    DATE(twt.date_time) AS work_date,
+                    CASE
+                        WHEN MAX(tq.assigned_hours) = 4.5 THEN 0.5
+                        WHEN MAX(tq.assigned_hours) > 0 THEN 1
+                        ELSE 0
+                    END AS day_value
+                FROM task_work_tracker twt
+                INNER JOIN temp_qc tq
+                    ON tq.user_id = twt.user_id
+                    AND DATE(tq.date) = DATE(twt.date_time)
+                WHERE DATE(twt.date_time) BETWEEN %s AND %s
+                AND twt.user_id IN ({in_ph})
+                AND twt.is_active = 1
+                GROUP BY twt.user_id, DATE(twt.date_time)
+            ) t
+            GROUP BY user_id
             """,
             [month_start, report_date] + user_ids,
         )
@@ -240,33 +251,33 @@ def fetch_data():
 
         qc_map = {}
 
-        if latest_qc_date:
-            cursor.execute(
-                f"""
-                SELECT 
-                    dwc.user_id,
-                    qr.qc_score,
-                    %s AS qc_date
-                FROM (
-                    SELECT DISTINCT user_id
-                    FROM tfs_user
-                    WHERE user_id IN ({in_ph})
-                ) dwc
-                LEFT JOIN (
-                    SELECT
-                        agent_id,
-                        ROUND(AVG(qc_score), 2) AS qc_score
-                    FROM qc_records
-                    WHERE DATE(date_of_file_submission) = %s
-                    AND agent_id IN ({in_ph})
-                    GROUP BY agent_id
-                ) qr
-                    ON qr.agent_id = dwc.user_id
-                """,
-                [latest_qc_date] + user_ids + [latest_qc_date] + user_ids,
-            )
+        # Get QC scores for report date
+        cursor.execute(
+            f"""
+            SELECT 
+                dwc.user_id,
+                qr.qc_score,
+                %s AS qc_date
+            FROM (
+                SELECT DISTINCT user_id
+                FROM tfs_user
+                WHERE user_id IN ({in_ph})
+            ) dwc
+            LEFT JOIN (
+                SELECT
+                    agent_id,
+                    ROUND(AVG(qc_score), 2) AS qc_score
+                FROM qc_records
+                WHERE DATE(date_of_file_submission) = %s
+                AND agent_id IN ({in_ph})
+                GROUP BY agent_id
+            ) qr
+                ON qr.agent_id = dwc.user_id
+            """,
+            [report_date] + user_ids + [report_date] + user_ids,
+        )
 
-            qc_map = {r["user_id"]: r for r in cursor.fetchall()}
+        qc_map = {r["user_id"]: r for r in cursor.fetchall()}
 
         avg_qc_map = {}
 
@@ -335,13 +346,18 @@ def fetch_data():
 
             qc_data = qc_map.get(uid, {})
 
+            # print(qc_data.get("qc_date"))
             qc_date = qc_data.get("qc_date")
             if qc_date and isinstance(qc_date, datetime):
                 qc_date = qc_date.strftime("%Y-%m-%d")
 
+            avg_qc = avg_qc_map.get(uid)
+            
+            assigned = 0 if is_team_agent(u) else (assigned_map.get(uid, 0) if uid in daily_map else 0)
+
             monthly_target = float(u["monthly_target"])
             extra = float(u["extra_assigned_hours"])
-            working_days = float(u["working_days"]) if u["working_days"] is not None else 0
+            working_days = float(u["working_days"])
 
             monthly_goal = monthly_target + extra
             pending = max(0, monthly_goal - mtd)
@@ -349,24 +365,7 @@ def fetch_data():
             days_worked = days_worked_map.get(uid, 0)
             remaining_days = max(0, working_days - days_worked)
 
-            # DEBUG: Print values for first user
-            if uid == users[0]["user_id"]:
-                print(f"DEBUG - User: {u['user_name']}")
-                print(f"  user_monthly_tracker_id: {u.get('user_monthly_tracker_id')}")
-                print(f"  working_days: {working_days}")
-                print(f"  days_worked: {days_worked}")
-                print(f"  remaining_days: {remaining_days}")
-                print(f"  monthly_target: {monthly_target}")
-                print(f"  pending: {pending}")
-
-            # Match tracker API logic: return NULL if user_monthly_tracker_id IS NULL or remaining_days = 0
-            daily_required = None
-            if u.get("user_monthly_tracker_id") is not None and remaining_days > 0:
-                daily_required = pending / remaining_days
-
-            avg_qc = avg_qc_map.get(uid)
-
-            assigned = 0 if (is_team_agent(u) or worked == 0) else assigned_map.get(uid, 0)
+            daily_required = pending / remaining_days if remaining_days else 0
 
             u.update(
                 {
@@ -399,27 +398,19 @@ def generate_html(report_date, data_rows):
     worked_date = report_date.strftime("%d %b")
     assigned_date = worked_date
     
-    # Find latest QC date
-    qc_dates = []
-    for u in data_rows:
-        qc_date = u.get("qc_date")
-        if qc_date:
-            if isinstance(qc_date, str):
-                qc_date = datetime.strptime(qc_date, "%Y-%m-%d")
-            qc_dates.append(qc_date)
-
-    latest_qc_date = max(qc_dates) if qc_dates else None
-    latest_qc_date_str = latest_qc_date.strftime("%d %b") if latest_qc_date else ""
-
+    # QC scores are for report date
+    qc_date_str = report_date.strftime("%d %b")
+    
     html = f"""
     <p><b>Delivered billable hours on {day_str} {month_year}</b></p>
+    <p><i><b>Note: This is the updated version of the report with correct Target and calculations.</b></i></p>
 
     <table border="1" cellpadding="3" cellspacing="0"
     style="border-collapse:collapse;font-family:Arial;font-size:11px;width:auto">
 
     <tr style="background:#FFD966;font-weight:bold">
         <th rowspan="2">Team Member</th>
-        <th rowspan="2">Exit Status</th>
+        <th rowspan="2">Status</th>
         <th colspan="4">Daily Report</th>
         <th colspan="4">MTD Report</th>
     </tr>
@@ -427,12 +418,12 @@ def generate_html(report_date, data_rows):
     <tr style="background:#FFE699;font-weight:bold">
         <th >Assigned <br>{assigned_date}</th>
         <th>Worked <br>{worked_date}</th>
-        <th>Quality <br>{latest_qc_date_str}</th>
+        <th>Quality <br>{report_date.strftime('%d %b')}</th>
         <th>Daily Required <br> Hours</th>
         <th>Delivered-MTD <br> till {worked_date}</th>
         <th>Monthly Goal</th>
         <th>Pending Goal</th>
-        <th>Avg QC till <br>{latest_qc_date_str}</th>
+        <th>Avg QC till <br>{report_date.strftime('%d %b')}</th>
     </tr>
     """
 
@@ -481,11 +472,11 @@ def generate_html(report_date, data_rows):
             html += f"""
             <tr>
             <td>{u['user_name']}</td>
-            <td align="center">{u.get('exit_status', '')}</td>
+            <td align="center">{u.get('exit_status', 'Active')}</td>
             <td align="right">{"" if is_team_agent(u) else f"{assigned:.2f}"}</td>
             <td align="right">{worked:.2f}</td>
             <td align="right">{f"{u['qc_score']:.2f}" if u.get('qc_score') is not None else ""}</td>
-            <td align="right">{f"{required:.2f}" if required is not None else ""}</td>
+            <td align="right">{required:.2f}</td>
             <td align="right">{mtd:.2f}</td>
             <td align="right">{goal:.2f}</td>
             <td align="right">{pending:.2f}</td>
@@ -496,7 +487,7 @@ def generate_html(report_date, data_rows):
             if not is_team_agent(u):
                 team_assigned += assigned
             team_worked += worked
-            team_required += required if required is not None else 0
+            team_required += required
             team_mtd += mtd
             team_goal += goal
             team_pending += pending
@@ -504,7 +495,7 @@ def generate_html(report_date, data_rows):
             if not is_team_agent(u):
                 grand_assigned += assigned
             grand_worked += worked
-            grand_required += required if required is not None else 0
+            grand_required += required
             grand_mtd += mtd
             grand_goal += goal
             grand_pending += pending
