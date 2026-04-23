@@ -355,6 +355,14 @@ def fetch_data():
             # Check if user has tracker data for report date (not absent)
             has_tracker_data = uid in daily_map
             
+            # Determine status: Present/Absent/Exited
+            if u.get('exit_status') == 'Exited':
+                status = 'Exited'
+            elif has_tracker_data:
+                status = 'Present'
+            else:
+                status = 'Absent'
+            
             # assigned = assigned_map.get(uid, 0)
             assigned = 0 if is_team_agent(u) else (assigned_map.get(uid, 0) if has_tracker_data else 0)
 
@@ -388,6 +396,7 @@ def fetch_data():
                     "monthly_goal": monthly_goal,
                     "pending_goal": pending,
                     "daily_required_hours": daily_required,
+                    "status": status,
                 }
             )
 
@@ -481,7 +490,7 @@ def generate_html(report_date, data_rows):
             html += f"""
             <tr>
             <td>{u['user_name']}</td>
-            <td align="center">{u.get('exit_status', 'Active')}</td>
+            <td align="center">{u.get('status', 'Active')}</td>
             <td align="right">{"" if is_team_agent(u) else f"{assigned:.2f}"}</td>
             <td align="right">{worked:.2f}</td>
             <td align="right">{f"{u['qc_score']:.2f}" if u.get('qc_score') is not None else ""}</td>
