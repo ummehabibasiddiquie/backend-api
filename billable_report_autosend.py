@@ -19,21 +19,21 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 RECIPIENTS = [
     "ummehabiba.siddiquie@transformsolution.net",
-    # "mohsin.pathan@transformsolution.net",
-    # "dharmesh.jotania@transformsolution.net",
-    # "venkateshwaran.iyer@transformsolution.net",
-    # "yahya.irani@transformsolution.net",
-    # "amit.mandviwala@transformsolution.net",
-    # "sriman.narayan@transformsolution.net",
-    # "shirin.gafoor@transformsolution.net",
-    # "avinash.dwivedi@transformsolution.net",
-    # "jimil.kinariwala@transformsolution.net",
-    # "manas.pradhan@transformsolution.net"
+    "mohsin.pathan@transformsolution.net",
+    "dharmesh.jotania@transformsolution.net",
+    "venkateshwaran.iyer@transformsolution.net",
+    "yahya.irani@transformsolution.net",
+    "amit.mandviwala@transformsolution.net",
+    "sriman.narayan@transformsolution.net",
+    "shirin.gafoor@transformsolution.net",
+    "avinash.dwivedi@transformsolution.net",
+    "jimil.kinariwala@transformsolution.net",
+    "manas.pradhan@transformsolution.net"
 ]
 
 CC_RECIPIENTS = [
-    # "ashfaq@transformsolution.com",
-    # "seema@transformsolution.com"
+    "ashfaq@transformsolution.com",
+    "seema@transformsolution.com"
 ]
 
 
