@@ -224,18 +224,8 @@ def fetch_data():
             f"""
             SELECT 
                 twt.user_id,
-                SUM(
-                    CASE
-                        WHEN tq.assigned_hours = 4.5 THEN 0.5
-                        ELSE 1
-                    END
-                ) AS days_worked
+                COUNT(DISTINCT DATE(twt.date_time)) AS days_worked
             FROM task_work_tracker twt
-            INNER JOIN temp_qc tq
-                ON tq.user_id = twt.user_id
-                AND DATE(tq.date) = DATE(twt.date_time)
-                AND tq.assigned_hours IS NOT NULL
-                AND tq.assigned_hours > 0
             WHERE DATE(twt.date_time) BETWEEN %s AND %s
             AND twt.user_id IN ({in_ph})
             AND twt.is_active=1
