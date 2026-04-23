@@ -837,7 +837,11 @@ def view_daily_trackers():
             worked_days AS (
                 SELECT DISTINCT
                     twt.user_id,
-                    DATE(CAST(twt.date_time AS DATETIME)) AS work_date
+                    DATE(CAST(twt.date_time AS DATETIME)) AS work_date,
+                    CASE
+                        WHEN tq.assigned_hours = 4.5 THEN 0.5
+                        ELSE 1
+                    END AS day_weight
                 FROM task_work_tracker twt
                 LEFT JOIN tfs_user u ON u.user_id = twt.user_id
                 INNER JOIN temp_qc tq
@@ -854,7 +858,7 @@ def view_daily_trackers():
                         OVER (PARTITION BY d.user_id ORDER BY d.work_date)
                         AS cumulative_billable_hours_till_day,
                     (
-                        SELECT COUNT(*)
+                        SELECT SUM(wd.day_weight)
                         FROM worked_days wd
                         WHERE wd.user_id = d.user_id
                         AND wd.work_date <= d.work_date
