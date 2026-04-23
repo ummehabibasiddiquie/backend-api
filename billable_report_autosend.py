@@ -196,7 +196,7 @@ def fetch_data():
             ) qr
                 ON qr.agent_id = dwc.user_id
             """,
-            [report_date] + [report_date] + user_ids,
+            [report_date] + user_ids + [report_date] + user_ids,
         )
 
         qc_map = {r["user_id"]: r for r in cursor.fetchall()}
