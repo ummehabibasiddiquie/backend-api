@@ -352,8 +352,11 @@ def fetch_data():
                 qc_date = qc_date.strftime("%Y-%m-%d")
 
             avg_qc = avg_qc_map.get(uid)
+            # Check if user has tracker data for report date (not absent)
+            has_tracker_data = uid in daily_map
+            
             # assigned = assigned_map.get(uid, 0)
-            assigned = 0 if is_team_agent(u) else assigned_map.get(uid, 0)
+            assigned = 0 if is_team_agent(u) else (assigned_map.get(uid, 0) if has_tracker_data else 0)
 
             monthly_target = float(u["monthly_target"])
             extra = float(u["extra_assigned_hours"])
@@ -425,14 +428,12 @@ def generate_html(report_date, data_rows):
 
     <tr style="background:#FFD966;font-weight:bold">
         <th rowspan="2">Team Member</th>
-        <th colspan="2">Status</th>
+        <th rowspan="2">Status</th>
         <th colspan="4">Daily Report</th>
         <th colspan="4">MTD Report</th>
     </tr>
 
     <tr style="background:#FFE699;font-weight:bold">
-        <th>Active</th>
-        <th>Exit Status</th>
         <th >Assigned <br>{assigned_date}</th>
         <th>Worked <br>{worked_date}</th>
         <th>Quality <br>{latest_qc_date_str}</th>
@@ -489,8 +490,7 @@ def generate_html(report_date, data_rows):
             html += f"""
             <tr>
             <td>{u['user_name']}</td>
-            <td align="center">{'Yes' if u.get('is_active') == 1 else 'No'}</td>
-            <td align="center">{u.get('exit_status', '')}</td>
+            <td align="center">{u.get('exit_status', 'Active')}</td>
             <td align="right">{"" if is_team_agent(u) else f"{assigned:.2f}"}</td>
             <td align="right">{worked:.2f}</td>
             <td align="right">{f"{u['qc_score']:.2f}" if u.get('qc_score') is not None else ""}</td>
@@ -522,7 +522,6 @@ def generate_html(report_date, data_rows):
         <tr style="font-weight:bold;background:#C9DAF8">
         <td>Team {team} Total</td>
         <td></td>
-        <td></td>
         <td align="right">{team_assigned:.2f}</td>
         <td align="right">{team_worked:.2f}</td>
         <td></td>
@@ -537,7 +536,6 @@ def generate_html(report_date, data_rows):
     html += f"""
         <tr style="font-weight:bold;background:#A4C2F4">
         <td>Grand Total</td>
-        <td></td>
         <td></td>
         <td align="right">{grand_assigned:.2f}</td>
         <td align="right">{grand_worked:.2f}</td>
