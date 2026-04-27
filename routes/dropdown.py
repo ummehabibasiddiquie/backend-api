@@ -150,7 +150,8 @@ def get():
                 query = f"""
                     SELECT
                         u.user_id,
-                        u.user_name AS label
+                        u.user_name AS label,
+                        u.user_tenure
                     FROM tfs_user u
                     JOIN user_role r ON r.role_id = u.role_id
                     JOIN project p ON p.project_id = %s
@@ -228,7 +229,7 @@ def get():
                 # ---------------- ADMIN / SUPER ADMIN ---------------- #
                 if user_role in ["admin", "super admin"]:
                     query = f"""
-                        SELECT u.user_id, u.user_name AS label
+                        SELECT u.user_id, u.user_name AS label, u.user_tenure
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
                         WHERE u.is_delete = 1
@@ -254,7 +255,7 @@ def get():
                 # ---------------- PROJECT MANAGER ---------------- #
                 elif user_role in ["project manager", "manager"]:
                     query = f"""
-                        SELECT u.user_id, u.user_name AS label
+                        SELECT u.user_id, u.user_name AS label, u.user_tenure
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
                         WHERE u.is_delete = 1
@@ -282,7 +283,7 @@ def get():
                 # ---------------- ASSISTANT MANAGER ---------------- #
                 elif user_role == "assistant manager":
                     query = f"""
-                        SELECT u.user_id, u.user_name AS label
+                        SELECT u.user_id, u.user_name AS label, u.user_tenure
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
                         WHERE u.is_delete = 1
@@ -304,7 +305,7 @@ def get():
                 # ---------------- QA ---------------- #
                 elif user_role == "qa":
                     query = f"""
-                        SELECT u.user_id, u.user_name AS label
+                        SELECT u.user_id, u.user_name AS label, u.user_tenure
                         FROM tfs_user u
                         JOIN user_role r ON r.role_id = u.role_id
                         WHERE u.is_delete = 1
