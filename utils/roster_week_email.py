@@ -9,7 +9,10 @@ from utils.email_utils import send_email
 from utils.roster_week_lock import week_has_pending_submitted_requests
 from utils.roster_excel import (
     LABEL_HALF_DAY,
+    LABEL_HALF_DAY_AFFECT_TARGET,
     LABEL_HOLIDAY,
+    LABEL_LEAVE,
+    LABEL_LEAVE_AFFECT_TARGET,
     LABEL_WEEK_OFF,
     day_to_excel_label,
     format_day_header,
@@ -128,6 +131,18 @@ def send_roster_approval_needed_email(
     except Exception as err:
         print(f"[roster approval email] failed: {err}", flush=True)
         return {"sent": False, "reason": str(err)}
+
+
+def _email_cell_label(day: dict | None, role_name: str | None) -> str:
+    """Leave in weekly mail is only Leave / Half day — never Affect Target."""
+    label = day_to_excel_label(day, role_name) or ""
+    if label == LABEL_LEAVE_AFFECT_TARGET:
+        return LABEL_LEAVE
+    if label == LABEL_HALF_DAY_AFFECT_TARGET:
+        return LABEL_HALF_DAY
+    if " (Affect Target)" in label:
+        return label.replace(" (Affect Target)", "").strip()
+    return label
 
 
 def _cell_bg(label: str) -> str:
@@ -254,7 +269,7 @@ def build_weekly_roster_html(
         ]
         for d in days:
             day = day_lookup.get((uid, d.isoformat()))
-            label = day_to_excel_label(day, role)
+            label = _email_cell_label(day, role)
             if not label:
                 if d.weekday() >= 5:
                     label = LABEL_WEEK_OFF
@@ -299,6 +314,14 @@ def send_weekly_roster_after_approval(
     if not to_list:
         print("[roster weekly email] no active QA/AM/PM/Admin emails; skip send", flush=True)
         return [{"skipped": True, "reason": "No active QA, Assistant Manager, Project Manager, Admin, or Super Admin emails found"}]
+
+    week_labels = [
+        str(w.get("label") or f"Week {w.get('week_number')}") for w in (weeks or [])
+    ]
+    print(
+        f"[roster weekly email] per-approval weeks only ({len(week_labels)}): {week_labels}",
+        flush=True,
+    )
 
     results: list[dict] = []
     for week in weeks or []:

@@ -88,6 +88,7 @@ from utils.roster_week_lock import (
     weeks_touched_by_requests,
     week_has_pending_submitted_requests,
     dates_from_change_request,
+    request_touches_week,
 )
 from utils.roster_week_email import (
     send_weekly_roster_after_approval,
@@ -443,7 +444,7 @@ def roster_submit_batch():
         placeholders = ",".join(["%s"] * len(employee_ids))
         cursor.execute(
             f"""
-            SELECT rcr.request_id, rcr.roster_month_id
+            SELECT rcr.request_id, rcr.roster_month_id, rcr.change_type, rcr.change_payload
             FROM roster_change_request rcr
             JOIN roster_month rm ON rm.roster_month_id = rcr.roster_month_id
             WHERE rm.month_year=%s
@@ -457,8 +458,26 @@ def roster_submit_batch():
             tuple([month_year, *employee_ids]),
         )
         pending_rows = cursor.fetchall() or []
+        week_number = data.get("week_number")
+        if week_number is not None and str(week_number).strip() != "":
+            try:
+                week_meta = week_meta_for_number(month_year, int(week_number))
+            except (TypeError, ValueError):
+                week_meta = None
+            if not week_meta:
+                return api_response(400, f"Week {week_number} was not found for {month_year}")
+            pending_rows = [row for row in pending_rows if request_touches_week(row, week_meta)]
+            print(
+                f"[roster submit] week {week_meta.get('label')} drafts: {len(pending_rows)}",
+                flush=True,
+            )
         if not pending_rows:
-            return api_response(400, "No pending change requests to submit in scope")
+            return api_response(
+                400,
+                "No pending change requests to submit for this week"
+                if week_number is not None and str(week_number).strip() != ""
+                else "No pending change requests to submit in scope",
+            )
 
         batch_id = new_batch_id()
         now = now_str()
@@ -730,6 +749,8 @@ def _send_roster_email_after_review(
         weeks_touched_by_requests(fallback_requests, months_by_id),
         locked_weeks,
     )
+    labels = [str(w.get("label") or f"Week {w.get('week_number')}") for w in weeks]
+    print(f"[roster weekly email] after review, weeks from this approval: {labels}", flush=True)
     if not weeks:
         return [{"skipped": True, "sent": False, "reason": "No weeks found to email"}]
     ready = [w for w in weeks if not week_has_pending_submitted_requests(cursor, w)]

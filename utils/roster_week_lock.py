@@ -124,6 +124,18 @@ def dates_from_change_payload(change_type: str, payload: dict | None) -> list[da
     return unique
 
 
+def request_touches_week(req: dict, week: dict) -> bool:
+    """True if this change request has any date in the week's Mon–Sun range."""
+    ws = parse_date(week.get("week_start"))
+    we = parse_date(week.get("week_end"))
+    if not ws or not we:
+        return False
+    for d in dates_from_change_request(req):
+        if ws <= d <= we:
+            return True
+    return False
+
+
 def dates_from_change_request(req: dict) -> list[date]:
     payload = req.get("change_payload")
     if isinstance(payload, (bytes, bytearray)):
