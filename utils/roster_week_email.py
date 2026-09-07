@@ -6,7 +6,7 @@ from datetime import date
 from html import escape
 
 from utils.email_utils import send_email
-from utils.roster_week_lock import month_has_pending_submitted_requests
+from utils.roster_week_lock import week_has_pending_submitted_requests
 from utils.roster_excel import (
     LABEL_HALF_DAY,
     LABEL_HOLIDAY,
@@ -300,27 +300,21 @@ def send_weekly_roster_after_approval(
         print("[roster weekly email] no active QA/AM/PM/Admin emails; skip send", flush=True)
         return [{"skipped": True, "reason": "No active QA, Assistant Manager, Project Manager, Admin, or Super Admin emails found"}]
 
-    pending_months: list[str] = []
-    for week in weeks or []:
-        extra = (week.get("month_year") or "").strip()
-        if extra:
-            pending_months.append(extra)
-        week_start = parse_date(week.get("week_start"))
-        if week_start:
-            pending_months.extend(month_years_for_dates(week_dates(week_start)))
-    if month_has_pending_submitted_requests(cursor, pending_months):
-        print("[roster weekly email] skip — pending approve/reject still on queue", flush=True)
-        return [
-            {
-                "skipped": True,
-                "sent": False,
-                "deferred": True,
-                "reason": "Weekly roster email waits until all pending requests are approved or rejected",
-            }
-        ]
-
     results: list[dict] = []
     for week in weeks or []:
+        if week_has_pending_submitted_requests(cursor, week):
+            label = week.get("label") or f"Week {week.get('week_number')}"
+            print(f"[roster weekly email] skip {label} — pending approve/reject still on that week", flush=True)
+            results.append(
+                {
+                    "week": week,
+                    "skipped": True,
+                    "sent": False,
+                    "deferred": True,
+                    "reason": f"Weekly roster email waits until pending requests for {label} are approved or rejected",
+                }
+            )
+            continue
         week_start = parse_date(week.get("week_start"))
         if not week_start:
             continue

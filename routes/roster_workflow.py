@@ -86,8 +86,7 @@ from utils.roster_week_lock import (
     week_meta_for_date,
     week_meta_for_number,
     weeks_touched_by_requests,
-    month_has_pending_submitted_requests,
-    weeks_from_approved_requests_for_months,
+    week_has_pending_submitted_requests,
     dates_from_change_request,
 )
 from utils.roster_week_email import (
@@ -723,31 +722,36 @@ def _send_roster_email_after_review(
     role_name: str,
 ) -> list[dict]:
     """
-    Do not email while the month still has pending items on the approval queue.
-    After the admin finishes (queue empty), send one mail per affected week.
+    Email only weeks touched by this approve/reject, and only if that week
+    has no remaining pending submitted requests. Do not re-mail every week
+    in the month that was approved earlier.
     """
-    months = [str(m).strip() for m in (month_years or []) if str(m).strip()]
-    if not months:
-        return [{"skipped": True, "sent": False, "reason": "No month on requests"}]
-    if month_has_pending_submitted_requests(cursor, months):
-        return [
-            {
-                "skipped": True,
-                "sent": False,
-                "deferred": True,
-                "reason": "Weekly roster email waits until all pending requests are approved or rejected",
-            }
-        ]
     weeks = _merge_week_lists(
-        weeks_from_approved_requests_for_months(cursor, months),
         weeks_touched_by_requests(fallback_requests, months_by_id),
         locked_weeks,
     )
     if not weeks:
         return [{"skipped": True, "sent": False, "reason": "No weeks found to email"}]
+    ready = [w for w in weeks if not week_has_pending_submitted_requests(cursor, w)]
+    deferred = [w for w in weeks if week_has_pending_submitted_requests(cursor, w)]
+    if not ready:
+        labels = ", ".join(
+            str(w.get("label") or f"Week {w.get('week_number')}") for w in deferred
+        )
+        return [
+            {
+                "skipped": True,
+                "sent": False,
+                "deferred": True,
+                "reason": (
+                    f"Weekly roster email waits until pending requests for "
+                    f"{labels or 'this week'} are approved or rejected"
+                ),
+            }
+        ]
     return send_weekly_roster_after_approval(
         cursor,
-        weeks=weeks,
+        weeks=ready,
         logged_in_user_id=logged_in_user_id,
         role_name=role_name,
     )
