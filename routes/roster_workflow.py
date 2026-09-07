@@ -88,7 +88,10 @@ from utils.roster_week_lock import (
     month_has_pending_submitted_requests,
     weeks_from_approved_requests_for_months,
 )
-from utils.roster_week_email import send_weekly_roster_after_approval
+from utils.roster_week_email import (
+    send_weekly_roster_after_approval,
+    send_roster_approval_needed_email,
+)
 
 from routes.roster import roster_bp
 
@@ -503,10 +506,27 @@ def roster_submit_batch():
         )
 
         conn.commit()
+
+        notify = {}
+        try:
+            notify = send_roster_approval_needed_email(
+                cursor,
+                month_year=month_year,
+                submitted_by=logged_in_user_id,
+                request_count=attached,
+            )
+        except Exception as mail_err:
+            print(f"[roster approval email] submit notify failed: {mail_err}", flush=True)
+            notify = {"sent": False, "reason": str(mail_err)}
+
+        message = "Roster batch submitted for approval"
+        if notify.get("sent"):
+            message = "Roster submitted for approval. Admin and Super Admin have been notified."
+
         return api_response(
             200,
-            "Roster batch submitted for approval",
-            {"batch_id": batch_id, "request_count": attached},
+            message,
+            {"batch_id": batch_id, "request_count": attached, "approval_notify": notify},
         )
     except Exception as e:
         conn.rollback()
@@ -713,7 +733,7 @@ def _send_roster_email_after_review(
                 "skipped": True,
                 "sent": False,
                 "deferred": True,
-                "reason": "Weekly roster email waits until all pending approval requests for this month are reviewed",
+                "reason": "Weekly roster email waits until all pending requests are approved or rejected",
             }
         ]
     weeks = _merge_week_lists(

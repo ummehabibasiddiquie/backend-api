@@ -6,6 +6,7 @@ from datetime import date
 from html import escape
 
 from utils.email_utils import send_email
+from utils.roster_week_lock import month_has_pending_submitted_requests
 from utils.roster_excel import (
     LABEL_HALF_DAY,
     LABEL_HOLIDAY,
@@ -19,15 +20,6 @@ from utils.roster_helpers import get_excel_roster_employees, parse_date, parse_m
 from utils.roster_metrics import apply_active_leaves_to_days
 from utils.roster_workflow import get_roster_leaves
 
-# Same pattern as billable_report_autosend.py / send_tracker_report.py
-RECIPIENTS = [
-    "ummehabiba.siddiquie@transformsolution.net",
-]
-
-CC_RECIPIENTS = [
-    "dharmesh.jotania@transformsolution.com"
-]
-
 TEAM_COLORS = ["#F8CBAD", "#D5A6E6", "#F4CCCC", "#D9EAD3"]
 HEADER_BG = "#E69138"
 WEEK_OFF_BG = "#9FC5E8"
@@ -35,10 +27,94 @@ LEAVE_BG = "#FFE599"
 BORDER = "#000000"
 
 
-def roster_weekly_recipients() -> tuple[list[str], list[str]]:
-    to_list = [e.strip() for e in RECIPIENTS if (e or "").strip()]
-    cc_list = [e.strip() for e in CC_RECIPIENTS if (e or "").strip()]
-    return to_list, cc_list
+APPROVER_ROLES = ("admin", "super admin")
+WEEKLY_ROSTER_ROLES = (
+    "qa",
+    "assistant manager",
+    "project manager",
+    "admin",
+    "super admin",
+)
+
+
+def _active_emails_for_roles(cursor, role_names: tuple[str, ...]) -> list[str]:
+    """Emails for active, not-deleted users in the given roles."""
+    if not role_names:
+        return []
+    placeholders = ",".join(["%s"] * len(role_names))
+    cursor.execute(
+        f"""
+        SELECT DISTINCT u.user_email
+        FROM tfs_user u
+        JOIN user_role r ON r.role_id = u.role_id
+        WHERE u.is_active=1 AND u.is_delete=1
+          AND LOWER(TRIM(r.role_name)) IN ({placeholders})
+          AND u.user_email IS NOT NULL AND TRIM(u.user_email) != ''
+        """,
+        tuple(role_names),
+    )
+    emails = []
+    seen = set()
+    for row in cursor.fetchall() or []:
+        email = (row.get("user_email") or "").strip()
+        key = email.lower()
+        if email and key not in seen:
+            seen.add(key)
+            emails.append(email)
+    return emails
+
+
+def get_admin_super_admin_emails(cursor) -> list[str]:
+    """Active Admin and Super Admin emails (approvers)."""
+    return _active_emails_for_roles(cursor, APPROVER_ROLES)
+
+
+def roster_weekly_recipients(cursor) -> tuple[list[str], list[str]]:
+    """Active QA, AM, PM, Admin, Super Admin — weekly roster To list."""
+    return _active_emails_for_roles(cursor, WEEKLY_ROSTER_ROLES), []
+
+
+def send_roster_approval_needed_email(
+    cursor,
+    *,
+    month_year: str,
+    submitted_by: int,
+    request_count: int,
+) -> dict:
+    """
+    Short notice to Admin / Super Admin that the approval queue has new work.
+    Does not include leave/day details.
+    """
+    to_list = get_admin_super_admin_emails(cursor)
+    if not to_list:
+        print("[roster approval email] no Admin/Super Admin emails; skip", flush=True)
+        return {"sent": False, "skipped": True, "reason": "No Admin or Super Admin email found"}
+
+    cursor.execute(
+        "SELECT user_name FROM tfs_user WHERE user_id=%s LIMIT 1",
+        (int(submitted_by),),
+    )
+    row = cursor.fetchone() or {}
+    raw_name = (row.get("user_name") or "A manager").strip() or "A manager"
+    raw_month = (month_year or "").strip() or "this month"
+    submitter = escape(raw_name)
+    month = escape(raw_month)
+    subject = f"Roster pending approval — {raw_month}"
+    html = f"""
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;">
+      <p>Hello,</p>
+      <p>A roster has been submitted and is waiting for approval.</p>
+      <p>Please open HRMS → Roster Management → Approval Queue and approve or reject the pending requests.</p>
+      <p style="color:#555;font-size:12px;">Month: {month}<br/>Submitted by: {submitter}</p>
+    </div>
+    """
+    try:
+        send_email(to_list, subject, html)
+        print(f"[roster approval email] sent {subject} to {to_list}", flush=True)
+        return {"sent": True, "to": to_list}
+    except Exception as err:
+        print(f"[roster approval email] failed: {err}", flush=True)
+        return {"sent": False, "reason": str(err)}
 
 
 def _cell_bg(label: str) -> str:
@@ -206,10 +282,29 @@ def send_weekly_roster_after_approval(
     Email the updated week grid for each approved week.
     Failures are returned, they do not raise.
     """
-    to_list, cc_list = roster_weekly_recipients()
+    to_list, cc_list = roster_weekly_recipients(cursor)
     if not to_list:
-        print("[roster weekly email] RECIPIENTS is empty; skip send", flush=True)
-        return [{"skipped": True, "reason": "No recipients configured"}]
+        print("[roster weekly email] no active QA/AM/PM/Admin emails; skip send", flush=True)
+        return [{"skipped": True, "reason": "No active QA, Assistant Manager, Project Manager, Admin, or Super Admin emails found"}]
+
+    pending_months: list[str] = []
+    for week in weeks or []:
+        extra = (week.get("month_year") or "").strip()
+        if extra:
+            pending_months.append(extra)
+        week_start = parse_date(week.get("week_start"))
+        if week_start:
+            pending_months.extend(month_years_for_dates(week_dates(week_start)))
+    if month_has_pending_submitted_requests(cursor, pending_months):
+        print("[roster weekly email] skip — pending approve/reject still on queue", flush=True)
+        return [
+            {
+                "skipped": True,
+                "sent": False,
+                "deferred": True,
+                "reason": "Weekly roster email waits until all pending requests are approved or rejected",
+            }
+        ]
 
     results: list[dict] = []
     for week in weeks or []:
