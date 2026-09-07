@@ -80,6 +80,7 @@ def send_roster_approval_needed_email(
     month_year: str,
     submitted_by: int,
     request_count: int,
+    week_label: str | None = None,
 ) -> dict:
     """
     Short notice to Admin / Super Admin that the approval queue has new work.
@@ -99,8 +100,20 @@ def send_roster_approval_needed_email(
     raw_month = (month_year or "").strip() or "this month"
     submitter = escape(raw_name)
     month = escape(raw_month)
-    subject = f"Roster pending approval — {raw_month}"
-    html = f"""
+    if week_label:
+        subject = f"Roster pending approval — {raw_month} {week_label}"
+        html = f"""
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;">
+      <p>Hello,</p>
+      <p>Roster change requests are waiting for approval.</p>
+      <p>Please open HRMS → Roster Management → Approval Queue and approve or reject the pending requests.</p>
+      <p style="color:#555;font-size:12px;">Month: {month}<br/>Week: {escape(week_label)}<br/>Pending requests: {int(request_count or 0)}<br/>Sent by: {submitter}</p>
+    </div>
+    """
+    else:
+        # Same automated mail used when a manager clicks Submit.
+        subject = f"Roster pending approval — {raw_month}"
+        html = f"""
     <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;">
       <p>Hello,</p>
       <p>A roster has been submitted and is waiting for approval.</p>

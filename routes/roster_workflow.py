@@ -36,6 +36,7 @@ from utils.roster_helpers import (
     get_excel_roster_employees,
     get_role_context,
     is_admin_or_super_admin,
+    is_super_admin,
     is_self_read_only_roster_role,
     can_lock_unlock_roster,
     month_year_label,
@@ -87,6 +88,7 @@ from utils.roster_week_lock import (
     weeks_touched_by_requests,
     month_has_pending_submitted_requests,
     weeks_from_approved_requests_for_months,
+    dates_from_change_request,
 )
 from utils.roster_week_email import (
     send_weekly_roster_after_approval,
@@ -1740,6 +1742,101 @@ def roster_list_week_locks():
         return api_response(200, "Week locks fetched", {"week_locks": locks})
     except Exception as e:
         return api_response(500, f"Failed to list week locks: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@roster_bp.route("/notify_approval", methods=["POST"])
+def roster_notify_approval():
+    """
+    Super Admin only. Email Admin/Super Admin that pending submitted
+    roster requests are waiting. Optional week_number limits to that week.
+    """
+    data = request.get_json(silent=True) or {}
+    logged_in_user_id, err = _require_logged_in_user(data)
+    if err:
+        return err
+
+    month_year = (data.get("month_year") or "").strip()
+    if not month_year:
+        return api_response(400, "month_year is required")
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        ctx = get_role_context(cursor, logged_in_user_id)
+        role_name = ctx.get("user_role_name", "")
+        if not is_super_admin(role_name):
+            return api_response(403, "Only Super Admin can send the approval notification email")
+
+        week_number = data.get("week_number")
+        week_meta = None
+        if week_number is not None and str(week_number).strip() != "":
+            try:
+                week_meta = week_meta_for_number(month_year, int(week_number))
+            except (TypeError, ValueError):
+                week_meta = None
+            if not week_meta:
+                return api_response(400, f"Week {week_number} was not found for {month_year}")
+
+        cursor.execute(
+            """
+            SELECT rcr.request_id, rcr.change_type, rcr.change_payload
+            FROM roster_change_request rcr
+            JOIN roster_month rm ON rm.roster_month_id = rcr.roster_month_id
+            WHERE rcr.is_active=1
+              AND rcr.status='Pending'
+              AND rcr.batch_id IS NOT NULL AND TRIM(rcr.batch_id) != ''
+              AND rm.is_active=1
+              AND rm.month_year=%s
+            """,
+            (month_year,),
+        )
+        rows = cursor.fetchall() or []
+        if week_meta:
+            ws = parse_date(week_meta.get("week_start"))
+            we = parse_date(week_meta.get("week_end"))
+            matching = []
+            for row in rows:
+                dates = dates_from_change_request(row)
+                if not dates:
+                    continue
+                if any(ws and we and ws <= d <= we for d in dates):
+                    matching.append(row)
+            rows = matching
+
+        if not rows:
+            scope = f"Week {week_meta.get('week_number')}" if week_meta else month_year
+            return api_response(
+                400,
+                f"No pending submitted requests to notify for {scope}",
+            )
+
+        week_label = None
+        if week_meta:
+            week_label = week_meta.get("label") or f"Week {week_meta.get('week_number')}"
+
+        notify = send_roster_approval_needed_email(
+            cursor,
+            month_year=month_year,
+            submitted_by=logged_in_user_id,
+            request_count=len(rows),
+            week_label=week_label,
+        )
+        if not notify.get("sent"):
+            return api_response(
+                400,
+                notify.get("reason") or "Approval notification email was not sent",
+                {"approval_notify": notify, "pending_count": len(rows)},
+            )
+        return api_response(
+            200,
+            "Approval notification emailed to Admin and Super Admin",
+            {"approval_notify": notify, "pending_count": len(rows)},
+        )
+    except Exception as e:
+        return api_response(500, f"Approval notify failed: {str(e)}")
     finally:
         cursor.close()
         conn.close()
