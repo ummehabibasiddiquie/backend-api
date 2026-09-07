@@ -393,7 +393,14 @@ def list_tasks():
     cursor = conn.cursor(dictionary=True)
 
     try:
-        where_sql = "" if include_inactive else "WHERE is_active=1"
+        where = []
+        params: list = []
+        if not include_inactive:
+            where.append("is_active=1")
+        if data.get("project_id") not in [None, ""]:
+            where.append("project_id=%s")
+            params.append(int(data["project_id"]))
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
         cursor.execute(
             f"""
             SELECT task_id, project_id, task_team_id,
@@ -403,18 +410,45 @@ def list_tasks():
             FROM task
             {where_sql}
             ORDER BY is_active DESC, task_id DESC
-            """
+            """,
+            tuple(params),
         )
         tasks = cursor.fetchall()
+
+        hours_by_task: dict[int, float] = {}
+        month_year = str(data.get("month_year") or "").strip()
+        project_id = data.get("project_id")
+        if month_year and project_id not in [None, ""] and tasks:
+            cursor.execute(
+                """
+                SELECT
+                    twt.task_id,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN twt.actual_billable_hours REGEXP '^[0-9]+(\\.[0-9]+)?$'
+                            THEN twt.actual_billable_hours
+                            ELSE 0
+                        END
+                    ), 0) AS achieved_hours
+                FROM task_work_tracker twt
+                WHERE twt.is_active=1
+                  AND twt.project_id=%s
+                  AND UPPER(DATE_FORMAT(twt.date_time, '%b%Y')) = UPPER(%s)
+                GROUP BY twt.task_id
+                """,
+                (int(project_id), month_year),
+            )
+            for row in cursor.fetchall() or []:
+                hours_by_task[int(row["task_id"])] = float(row.get("achieved_hours") or 0)
 
         result = []
         for t in tasks:
             task_team = json.loads(t.get("task_team_id") or "[]")
             important_cols = json.loads(t.get("important_columns") or "[]")
-
+            tid = int(t["task_id"])
             result.append(
                 {
-                    "task_id": t["task_id"],
+                    "task_id": tid,
                     "project_id": t["project_id"],
                     "task_team": task_team,
                     "task_name": t["task_name"],
@@ -426,6 +460,7 @@ def list_tasks():
                     "is_active": int(t.get("is_active") if t.get("is_active") is not None else 1),
                     "created_date": t["created_date"],
                     "updated_date": t["updated_date"],
+                    "achieved_hours": hours_by_task.get(tid, 0.0),
                 }
             )
 

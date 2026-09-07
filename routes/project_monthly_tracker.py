@@ -20,6 +20,77 @@ def project_exists(cursor, project_id: int) -> bool:
     return cursor.fetchone() is not None
 
 
+def attach_tasks_to_monthly_rows(cursor, rows: list) -> None:
+    """Add per-task achieved hours using the same billable formula as project totals."""
+    if not rows:
+        return
+
+    project_ids = sorted({int(r["project_id"]) for r in rows if r.get("project_id") is not None})
+    if not project_ids:
+        for row in rows:
+            row["tasks"] = []
+        return
+
+    placeholders = ",".join(["%s"] * len(project_ids))
+    cursor.execute(
+        f"""
+        SELECT task_id, project_id, task_name
+        FROM task
+        WHERE is_active=1 AND project_id IN ({placeholders})
+        ORDER BY task_name
+        """,
+        tuple(project_ids),
+    )
+    tasks_by_project: dict[int, list] = {}
+    for t in cursor.fetchall() or []:
+        tasks_by_project.setdefault(int(t["project_id"]), []).append(
+            {
+                "task_id": int(t["task_id"]),
+                "task_name": t.get("task_name") or f"Task {t['task_id']}",
+            }
+        )
+
+    cursor.execute(
+        f"""
+        SELECT
+            twt.project_id,
+            twt.task_id,
+            UPPER(DATE_FORMAT(twt.date_time, '%b%Y')) AS month_year,
+            COALESCE(SUM(
+                CASE
+                    WHEN twt.actual_billable_hours REGEXP '^[0-9]+(\\.[0-9]+)?$'
+                    THEN twt.actual_billable_hours
+                    ELSE 0
+                END
+            ), 0) AS achieved_hours
+        FROM task_work_tracker twt
+        WHERE twt.is_active=1
+          AND twt.project_id IN ({placeholders})
+        GROUP BY twt.project_id, twt.task_id, UPPER(DATE_FORMAT(twt.date_time, '%b%Y'))
+        """,
+        tuple(project_ids),
+    )
+    hours = {}
+    for h in cursor.fetchall() or []:
+        if h.get("task_id") is None:
+            continue
+        hours[(int(h["project_id"]), str(h.get("month_year") or "").upper(), int(h["task_id"]))] = float(
+            h.get("achieved_hours") or 0
+        )
+
+    for row in rows:
+        pid = int(row["project_id"])
+        month_key = str(row.get("month_year") or "").strip().upper()
+        row["tasks"] = [
+            {
+                "task_id": t["task_id"],
+                "task_name": t["task_name"],
+                "achieved_hours": hours.get((pid, month_key, t["task_id"]), 0.0),
+            }
+            for t in tasks_by_project.get(pid, [])
+        ]
+
+
 # -----------------------------
 # ADD (supports single or bulk insert)
 # -----------------------------
@@ -398,6 +469,8 @@ def list_project_monthly_tracker():
         cursor.execute(count_query, tuple(pmt_params))
         total = (cursor.fetchone() or {}).get("total", 0)
 
+        attach_tasks_to_monthly_rows(cursor, rows)
+
         return api_response(200, "Records fetched successfully", {
             "total": total,
             "limit": limit,
@@ -407,6 +480,30 @@ def list_project_monthly_tracker():
 
     except Exception as e:
         return api_response(500, f"List failed: {str(e)}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@project_monthly_tracker_bp.route("/tasks", methods=["GET", "POST", "OPTIONS"])
+def list_project_month_tasks():
+    """Tasks under a project with achieved hours for the given month_year."""
+    data = request.get_json() or {}
+    err = validate_required(data, ["project_id", "month_year"])
+    if err:
+        return api_response(400, err)
+
+    project_id = int(data["project_id"])
+    month_year = str(data["month_year"]).strip()
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        rows = [{"project_id": project_id, "month_year": month_year}]
+        attach_tasks_to_monthly_rows(cursor, rows)
+        return api_response(200, "Project tasks fetched", {"tasks": rows[0].get("tasks") or []})
+    except Exception as e:
+        return api_response(500, f"Task list failed: {str(e)}")
     finally:
         cursor.close()
         conn.close()

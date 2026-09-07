@@ -516,6 +516,14 @@ def update_tracker():
 
         tracker_file = old_file
         uploaded = request.files.get("tracker_file")
+        remove_flag = (
+            str(form.get("remove_file") or request.values.get("remove_file") or "").strip().lower()
+        )
+        remove_file = remove_flag in ("1", "true", "yes")
+        print(
+            f"[tracker update] tracker_id={tracker_id} remove_file={remove_file} "
+            f"has_upload={bool(uploaded and uploaded.filename)} old_file={bool(old_file)}"
+        )
 
         shift = form.get("shift", tracker.get("shift", "DAY")).upper()
         if shift not in ["DAY", "NIGHT"]:
@@ -573,6 +581,14 @@ def update_tracker():
             # This prevents 404 errors due to timing issues between upload and delete
             # Cloudinary will automatically manage versions when overwrite=True is used
             tracker_file = cloudinary_url
+            remove_file = False
+        elif remove_file:
+            tracker_file = None
+            if old_file:
+                cursor.execute(
+                    "DELETE FROM tracker_records WHERE file_path = %s",
+                    (old_file,),
+                )
 
         # updated_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         now = datetime.now()
@@ -635,6 +651,8 @@ def update_tracker():
 
         # if DB commit succeeded, clear rollback marker
         new_file_saved = None
+        if remove_file and old_file:
+            safe_delete_cloudinary_tracker(old_file)
 
         device_id = form.get("device_id")
         device_type = form.get("device_type")
