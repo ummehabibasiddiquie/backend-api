@@ -673,9 +673,8 @@ def apply_universal_working_days_cap(
 
 def cap_month_goals_to_universal_working_days(cursor, month_year: str) -> dict:
     """
-    Clamp roster_month + user_monthly_tracker for this month when working days
-    or target hours exceed the universal Mon–Fri minus holidays ceiling.
-    Does not change roster_day week-offs (those stay weekly).
+    Clamp working days to the universal Mon–Fri minus holidays ceiling.
+    Does not change monthly_target hours — those stay as generated or manager-edited.
     """
     year, month = parse_month_year(month_year)
     month_start, month_end = month_date_range(year, month)
@@ -690,7 +689,7 @@ def cap_month_goals_to_universal_working_days(cursor, month_year: str) -> dict:
 
     cursor.execute(
         """
-        SELECT roster_month_id, target_working_days, monthly_target_hours
+        SELECT roster_month_id, target_working_days
         FROM roster_month
         WHERE is_active=1 AND month_year=%s
         """,
@@ -698,23 +697,21 @@ def cap_month_goals_to_universal_working_days(cursor, month_year: str) -> dict:
     )
     for row in cursor.fetchall() or []:
         twd = float(row.get("target_working_days") or 0)
-        hours = float(row.get("monthly_target_hours") or 0)
         if twd <= cap:
             continue
-        new_hours = round(hours * (cap / twd), 2) if twd > 0 else hours
         cursor.execute(
             """
             UPDATE roster_month
-            SET target_working_days=%s, monthly_target_hours=%s, updated_date=%s
+            SET target_working_days=%s, updated_date=%s
             WHERE roster_month_id=%s
             """,
-            (float(cap), new_hours, now, int(row["roster_month_id"])),
+            (float(cap), now, int(row["roster_month_id"])),
         )
         roster_updated += 1
 
     cursor.execute(
         """
-        SELECT user_monthly_tracker_id, working_days, monthly_target
+        SELECT user_monthly_tracker_id, working_days
         FROM user_monthly_tracker
         WHERE is_active=1 AND month_year=%s
         """,
@@ -722,17 +719,15 @@ def cap_month_goals_to_universal_working_days(cursor, month_year: str) -> dict:
     )
     for row in cursor.fetchall() or []:
         wd = float(row.get("working_days") or 0)
-        mt = float(row.get("monthly_target") or 0)
         if wd <= cap:
             continue
-        new_mt = round(mt * (cap / wd), 2) if wd > 0 else mt
         cursor.execute(
             """
             UPDATE user_monthly_tracker
-            SET working_days=%s, monthly_target=%s
+            SET working_days=%s
             WHERE user_monthly_tracker_id=%s
             """,
-            (str(cap), str(new_mt), int(row["user_monthly_tracker_id"])),
+            (str(cap), int(row["user_monthly_tracker_id"])),
         )
         tracker_updated += 1
 
@@ -1451,11 +1446,14 @@ def sync_to_user_monthly_tracker(
     approval_status: str | None = "Approved",
     action: str = "ROSTER_SYNCED_TO_PRODUCTION",
     write_audit: bool = True,
+    overwrite_monthly_target: bool = False,
 ) -> dict:
     """
     Upsert user_monthly_tracker from roster metrics.
-    Used when a change cycle is approved, and insert-only on generate
-    (see insert_umt_from_roster_if_missing) so other months are not rewritten.
+
+    Monthly target is created once (insert). Roster generate / approve / reconcile
+    never overwrites an existing monthly_target — managers edit that afterwards.
+    Working days can still be synced from the roster.
     """
     user_id = int(roster_month["user_id"])
     month_year = roster_month["month_year"]
@@ -1466,14 +1464,24 @@ def sync_to_user_monthly_tracker(
 
     existing_id = roster_month.get("existing_tracker_id")
     if existing_id:
-        cursor.execute(
-            """
-            UPDATE user_monthly_tracker
-            SET monthly_target=%s, working_days=%s, extra_assigned_hours=%s
-            WHERE user_monthly_tracker_id=%s
-            """,
-            (monthly_target, working_days, extra, int(existing_id)),
-        )
+        if overwrite_monthly_target:
+            cursor.execute(
+                """
+                UPDATE user_monthly_tracker
+                SET monthly_target=%s, working_days=%s, extra_assigned_hours=%s
+                WHERE user_monthly_tracker_id=%s
+                """,
+                (monthly_target, working_days, extra, int(existing_id)),
+            )
+        else:
+            cursor.execute(
+                """
+                UPDATE user_monthly_tracker
+                SET working_days=%s, extra_assigned_hours=%s
+                WHERE user_monthly_tracker_id=%s
+                """,
+                (working_days, extra, int(existing_id)),
+            )
         tracker_id = int(existing_id)
         old_value = None
     else:
@@ -1490,14 +1498,24 @@ def sync_to_user_monthly_tracker(
         old_value = dict(existing) if existing else None
 
         if existing:
-            cursor.execute(
-                """
-                UPDATE user_monthly_tracker
-                SET monthly_target=%s, working_days=%s, extra_assigned_hours=%s
-                WHERE user_monthly_tracker_id=%s
-                """,
-                (monthly_target, working_days, extra, int(existing["user_monthly_tracker_id"])),
-            )
+            if overwrite_monthly_target:
+                cursor.execute(
+                    """
+                    UPDATE user_monthly_tracker
+                    SET monthly_target=%s, working_days=%s, extra_assigned_hours=%s
+                    WHERE user_monthly_tracker_id=%s
+                    """,
+                    (monthly_target, working_days, extra, int(existing["user_monthly_tracker_id"])),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE user_monthly_tracker
+                    SET working_days=%s, extra_assigned_hours=%s
+                    WHERE user_monthly_tracker_id=%s
+                    """,
+                    (working_days, extra, int(existing["user_monthly_tracker_id"])),
+                )
             tracker_id = int(existing["user_monthly_tracker_id"])
         else:
             cursor.execute(
