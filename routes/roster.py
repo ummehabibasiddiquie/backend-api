@@ -296,6 +296,7 @@ def generate_roster_for_employee():
             return api_response(400, result.get("reason", "Roster generation failed"), result)
 
         fill_missing_umt_for_roster_month(cursor, target_month_year, logged_in_user_id)
+        reconcile_month_goals_to_universal(cursor, target_month_year, logged_in_user_id)
         conn.commit()
         return api_response(200, "Employee roster generated successfully", result)
     except Exception as e:
@@ -693,7 +694,7 @@ def list_rosters():
                 rm.baseline_target_days,
                 rm.calendar_working_days,
                 rm.target_working_days,
-                COALESCE(CAST(umt.monthly_target AS DECIMAL(10,2)), rm.monthly_target_hours) AS monthly_target_hours,
+                rm.monthly_target_hours,
                 COALESCE(umt.extra_assigned_hours, rm.extra_assigned_hours) AS extra_assigned_hours,
                 rm.created_by,
                 rm.created_date,
@@ -755,6 +756,7 @@ def list_rosters():
                 ]
                 row["calendar_working_days"] = metrics["calendar_working_days"]
                 row["target_working_days"] = metrics["target_working_days"]
+                row["monthly_target_hours"] = metrics["monthly_target_hours"]
 
         lock_info = month_calendar_has_lock(cursor, month_year)
         month_calendar_locked = lock_info is not None

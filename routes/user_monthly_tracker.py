@@ -14,6 +14,17 @@ from datetime import datetime, timedelta
 
 user_monthly_tracker_bp = Blueprint("user_monthly_tracker", __name__)
 
+
+def _parse_extra_assigned_hours(raw) -> tuple[float | None, str | None]:
+    """Extra hours may be negative (reduces monthly goal). None means not provided."""
+    if raw in (None, ""):
+        return None, None
+    try:
+        value = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return None, "extra_assigned_hours must be a number"
+    return value, None
+
 # task_work_tracker.date_time is TEXT like "YYYY-MM-DD HH:MM:SS"
 TRACKER_DT = "CAST(twt.date_time AS DATETIME)"
 TRACKER_YEAR_MONTH = f"(YEAR({TRACKER_DT})*100 + MONTH({TRACKER_DT}))"
@@ -135,7 +146,13 @@ def add_user_monthly_target():
             user_id = int(data["user_id"])
             month_year = str(data["month_year"]).strip()  # MONYYYY like JAN2026
             monthly_target = str(data["monthly_target"]).strip()  # TEXT in DB
-            extra_assigned_hours = int(data.get("extra_assigned_hours") or 0)
+            extra_assigned_hours, extra_err = _parse_extra_assigned_hours(
+                data.get("extra_assigned_hours")
+            )
+            if extra_err:
+                skipped.append({"index": idx + 1, "user_id": user_id, "reason": extra_err})
+                continue
+            extra_assigned_hours = extra_assigned_hours if extra_assigned_hours is not None else 0.0
             working_days = str(data["working_days"]).strip()  # TEXT in DB
             created_date = str(data.get("created_date") or now_str())
 
@@ -245,22 +262,17 @@ def update_user_monthly_target():
 
     parsed_monthly_target = None
     if "monthly_target" in data and data["monthly_target"] not in [None, ""]:
-        try:
-            parsed_monthly_target = float(str(data["monthly_target"]).strip())
-        except (TypeError, ValueError):
-            return api_response(400, "monthly_target must be a number")
-        if parsed_monthly_target < 0:
-            return api_response(400, "monthly_target cannot be negative")
-        updates.append("monthly_target=%s")
-        params.append(str(parsed_monthly_target))
+        # Monthly target is set by roster generate and must not be edited afterwards.
+        # Reduce/increase the goal with extra_assigned_hours (negative allowed).
+        parsed_monthly_target = None
 
+    parsed_extra = None
     if "extra_assigned_hours" in data and data["extra_assigned_hours"] not in [None, ""]:
+        parsed_extra, extra_err = _parse_extra_assigned_hours(data.get("extra_assigned_hours"))
+        if extra_err:
+            return api_response(400, extra_err)
         updates.append("extra_assigned_hours=%s")
-        params.append(int(data["extra_assigned_hours"])) 
-
-    if "working_days" in data and data["working_days"] not in [None, ""]:
-        updates.append("working_days=%s")
-        params.append(str(data["working_days"]).strip())
+        params.append(parsed_extra)
 
     if not updates:
         return api_response(400, "Nothing to update")
@@ -272,7 +284,7 @@ def update_user_monthly_target():
         # Current row
         cursor.execute(
             """
-            SELECT user_id, month_year
+            SELECT user_id, month_year, monthly_target
             FROM user_monthly_tracker
             WHERE user_monthly_tracker_id=%s
             """,
@@ -281,6 +293,17 @@ def update_user_monthly_target():
         current = cursor.fetchone()
         if not current:
             return api_response(404, "Active record not found")
+
+        if parsed_extra is not None:
+            try:
+                current_target = float(current.get("monthly_target") or 0)
+            except (TypeError, ValueError):
+                current_target = 0.0
+            if current_target + parsed_extra < 0:
+                return api_response(
+                    400,
+                    "Extra assigned hours cannot reduce the monthly goal below 0",
+                )
 
         if logged_in_user_id not in [None, ""]:
             ctx = get_role_context(cursor, int(logged_in_user_id))
@@ -347,12 +370,12 @@ def update_user_monthly_target():
             data["month_year"] if data.get("month_year") not in [None, ""] else current["month_year"]
         ).strip()
 
-        if "extra_assigned_hours" in data and data["extra_assigned_hours"] not in [None, ""]:
+        if parsed_extra is not None:
             sync_tracker_extra_hours_to_roster(
                 cursor,
                 final_user_id,
                 final_month_year,
-                float(data["extra_assigned_hours"]),
+                parsed_extra,
             )
 
         if parsed_monthly_target is not None:

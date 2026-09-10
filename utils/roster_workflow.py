@@ -1293,6 +1293,14 @@ def apply_extra_hours_update(cursor, roster_month: dict, payload: dict) -> None:
         """,
         (extra, now_str(), roster_month_id),
     )
+    cursor.execute(
+        """
+        UPDATE user_monthly_tracker
+        SET extra_assigned_hours=%s
+        WHERE user_id=%s AND month_year=%s AND is_active=1
+        """,
+        (extra, int(roster_month["user_id"]), str(roster_month["month_year"]).strip()),
+    )
 
 
 def apply_change_request(cursor, roster_month: dict, request_row: dict, performed_by: int) -> None:
@@ -1340,12 +1348,14 @@ def refresh_roster_month_metrics(cursor, roster_month_id: int) -> dict:
         UPDATE roster_month
         SET calendar_working_days=%s,
             target_working_days=%s,
+            monthly_target_hours=%s,
             updated_date=%s
         WHERE roster_month_id=%s
         """,
         (
             metrics["calendar_working_days"],
             metrics["target_working_days"],
+            metrics["monthly_target_hours"],
             now_str(),
             int(roster_month_id),
         ),
@@ -1355,11 +1365,8 @@ def refresh_roster_month_metrics(cursor, roster_month_id: int) -> dict:
 
 def reconcile_month_goals_to_universal(cursor, month_year: str, performed_by: int) -> dict:
     """
-    Recalculate roster working days for the month.
-
-    Does not overwrite a manager-set monthly_target (hours can be lower than
-    working_days * 9 when the team has no work on some days). Missing goal
-    rows are still created from roster metrics.
+    Recalculate every active roster in the month and write User Monthly Goal
+    from those metrics (week-offs do not reduce target; extras do not raise it).
     """
     cursor.execute(
         """
@@ -1372,36 +1379,7 @@ def reconcile_month_goals_to_universal(cursor, month_year: str, performed_by: in
     ids = [int(r["roster_month_id"]) for r in (cursor.fetchall() or [])]
     synced = 0
     for roster_month_id in ids:
-        roster_month = get_roster_month(cursor, roster_month_id)
-        if not roster_month:
-            continue
-        cursor.execute(
-            """
-            SELECT monthly_target
-            FROM user_monthly_tracker
-            WHERE user_id=%s AND month_year=%s AND is_active=1
-            LIMIT 1
-            """,
-            (int(roster_month["user_id"]), str(roster_month["month_year"]).strip()),
-        )
-        umt = cursor.fetchone()
-        preserved_hours = None
-        if umt and umt.get("monthly_target") not in (None, ""):
-            try:
-                preserved_hours = float(umt.get("monthly_target"))
-            except (TypeError, ValueError):
-                preserved_hours = None
-
         refresh_roster_month_metrics(cursor, roster_month_id)
-        if preserved_hours is not None:
-            cursor.execute(
-                """
-                UPDATE roster_month
-                SET monthly_target_hours=%s, updated_date=%s
-                WHERE roster_month_id=%s
-                """,
-                (preserved_hours, now_str(), int(roster_month_id)),
-            )
         roster_month = get_roster_month(cursor, roster_month_id)
         if not roster_month:
             continue
@@ -1411,7 +1389,6 @@ def reconcile_month_goals_to_universal(cursor, month_year: str, performed_by: in
             "Monthly goal anchored to universal working days",
             int(performed_by),
             write_audit=False,
-            overwrite_monthly_target=preserved_hours is None,
         )
         synced += 1
     cap_result = cap_month_goals_to_universal_working_days(cursor, month_year)
